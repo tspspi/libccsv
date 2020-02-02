@@ -1,0 +1,15 @@
+EXESUFFIX=.exe
+OBJSUFFIX=.o
+SLIBSUFFIX=.a
+DYNLIBSUFFIX=.dll
+
+CC=gcc -Wall -Werror -pedantic -ansi -std=c99
+CCLIB=gcc -Wall -Werror -pedantic -ansi -std=c99
+ARCMD=ar rcs
+SHAREDCC=gcc -Wall -Werror -shared
+MAKE=make
+CP=copy
+MKDIR=md
+MKSTAGEARCHIVE=jar -cMf packages/libccsv-x86-win32.zip -C stage .
+RMDIR=rd /s /q
+RMFILE=del /q

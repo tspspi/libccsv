@@ -1,0 +1,15 @@
+EXESUFFIX=
+OBJSUFFIX=.o
+SLIBSUFFIX=.a
+DYNLIBSUFFIX=.so
+
+CC=clang -Wall -Werror -pedantic -ansi -std=c99 -lm
+CCLIB=clang -Wall -Werror -fPIC -pedantic -ansi -std=c99 -lm
+ARCMD=ar rcs
+SHAREDCC=clang -Wall -Werror -shared
+MAKE=make
+CP=cp
+MKDIR=mkdir -p
+MKSTAGEARCHIVE=tar -czf packages/libccsv-amd64-linux.tar.gz -C stage .
+RMDIR=rm -rf
+RMFILE=rm
