@@ -1,6 +1,10 @@
 #ifndef __is_included__e2db3911_45df_11ea_8fdc_b499badf00a1
 #define __is_included__e2db3911_45df_11ea_8fdc_b499badf00a1 1
 
+#ifndef CCSV_COLLECTOR_BATCH_SIZE
+    #define CCSV_COLLECTOR_BATCH_SIZE           1024
+#endif
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -173,16 +177,30 @@ enum csvError csvParserProcessByte(
     char bByte
 );
 
+struct stringCollectorElement {
+    unsigned long int dwUsed;
+    struct stringCollectorElement* lpNext;
+    char bData[CCSV_COLLECTOR_BATCH_SIZE];
+};
+
 struct csvParser {
     enum csvParserState parserState;
     uint8_t detectedLineSepChar;        /* Will be set to 0x0D or 0x0A (CR or LF) as detected or 0x00 if none has been encountered till now */
     uint32_t dwFlags;                   /* Configured flags */
+    unsigned long int dwFieldCount;     /* Or 0 if not determined until now ... */
+    struct csvRecord* lpHeaderRecord;   /* If header reading is enabled the header record gets cached here */
 
     struct {
         csvParser_Callback_HeadersRead  callbackHeader;     void* lpFreeParam_Header;
         csvParser_Callback_RecordRead   callbackRecord;     void* lpFreeParam_Record;
         csvParser_Callback_Error        callbackError;      void* lpFreeParam_Error;
     } callbacks;
+
+    struct csvRecord* lpCurrentRecords;
+    struct {
+        struct stringCollectorElement* lpHead;
+        struct stringCollectorElement* lpLast;
+    } collector;
 
     unsigned long int dwLineNumber;     /* Line number counter (used for error messages) */
 

@@ -53,6 +53,11 @@ enum csvError csvParserCreate(
     lpNewParser->callbacks.lpFreeParam_Error        = lpFreeParam_Error;
     lpNewParser->dwLineNumber                       = 0;
     lpNewParser->lpSystem                           = lpSystem;
+    lpNewParser->dwFieldCount                       = 0;
+    lpNewParser->lpHeaderRecord                     = NULL;
+    lpNewParser->lpCurrentRecords                   = NULL;
+    lpNewParser->collector.lpHead                   = NULL;
+    lpNewParser->collector.lpLast                   = NULL;
 
     (*lpParserOut) = lpNewParser;
     return csvE_Ok;
@@ -75,10 +80,87 @@ enum csvError csvParserRelease(
 
     return csvE_Ok;
 }
+
+static inline enum csvError csvParser_AllocInternal(
+    struct csvParser* lpP,
+    unsigned long int dwSize,
+    void** lpOut
+) {
+    if(lpOut == NULL) { return csvE_InvalidParam; }
+    (*lpOut) = NULL;
+    if(lpP == NULL) { return csvE_InvalidParam; }
+
+    if(lpP->lpSystem == NULL) {
+        (*lpOut) = malloc(dwSize);
+        if((*lpOut) == NULL) {
+            return csvE_OutOfMemory;
+        } else {
+            return csvE_Ok;
+        }
+    } else {
+        return lpP->lpSystem->alloc(lpP->lpSystem, dwSize, lpOut);
+    }
+}
+
+static enum csvError csvParser_Collector_Push(
+    struct csvParser* lpParser,
+    char bByte
+) {
+    enum csvError e;
+    if(lpParser == NULL) { return csvE_InvalidParam; }
+
+    if(lpParser->collector.lpHead == NULL) {
+        /* We have to allocate the first element */
+        e = csvParser_AllocInternal(lpParser, sizeof(struct stringCollectorElement), (void**)(&(lpParser->collector.lpHead)));
+        if(e != csvE_Ok) { return e; }
+        lpParser->collector.lpLast = lpParser->collector.lpHead;
+        lpParser->collector.lpHead->lpNext = NULL;
+        lpParser->collector.lpHead->dwUsed = 1;
+        lpParser->collector.lpHead->bData[0] = bByte;
+        return csvE_Ok;
+    } else {
+        /* We have to push or extend ... */
+        if(lpParser->collector.lpLast->dwUsed == CCSV_COLLECTOR_BATCH_SIZE) {
+            /* Append a new element ... */
+            e = csvParser_AllocInternal(lpParser, sizeof(struct stringCollectorElement), (void**)(&(lpParser->collector.lpLast->lpNext)));
+            if(e != csvE_Ok) { return e; }
+
+            lpParser->collector.lpLast->lpNext->lpNext = NULL;
+            lpParser->collector.lpLast->lpNext->dwUsed = 0;
+            lpParser->collector.lpLast = lpParser->collector.lpLast->lpNext;
+        }
+
+        lpParser->collector.lpLast->bData[lpParser->collector.lpLast->dwUsed] = bByte;
+        lpParser->collector.lpLast->dwUsed = lpParser->collector.lpLast->dwUsed + 1;
+        return csvE_Ok;
+    }
+}
+
 enum csvError csvParserProcessByte(
     struct csvParser* lpParser,
     char bByte
 ) {
+    enum csvError e;
+
+    if(lpParser == NULL) {
+        return csvE_InvalidParam;
+    }
+
+    if(lpParser->parserState == csvParserState_IDLE) {
+        /* We are reading a new line, first element (there is no cached element) */
+        e = csvRecordCreate(&(lpParser->lpCurrentRecords), (lpParser->dwFieldCount != 0) ? lpParser->dwFieldCount : 1, lpParser->lpSystem);
+        if(e != csvE_Ok) {
+            /*
+                We failed to allocate ...
+
+                ToDo: Call error callback and either retry OR
+                release everything and abort
+            */
+        }
+    } else {
+        return csvE_ImplementationError; /* Undefined state ... should never happen */
+    }
+
     return csvE_ImplementationError;
 }
 
