@@ -19,6 +19,7 @@ enum csvError {
     csvE_InvalidParam                       = 2,
     csvE_IndexOutOfBounds                   = 3,
 
+    csvE_ParserError                        = 4,
 
 
 
@@ -81,8 +82,17 @@ enum csvError csvRecordSetField(
     struct csvRecord* lpRecord,
     unsigned long int dwFieldIndex,
 
-    char* lpDataIn,
+    const char* lpDataIn,
     unsigned long int dwDataLen
+);
+enum csvError csvRecordAppendField(
+    struct csvRecord** lpRecord,
+    unsigned long int dwFieldIndex,
+
+    const char* lpDataIn,
+    unsigned long int dwDataLen,
+
+    struct csvSystemAPI* lpSystem
 );
 
 /*
@@ -135,6 +145,17 @@ struct csvSystemAPI {
 
 enum csvParserState {
     csvParserState_IDLE                 = 0,
+
+    csvParserState_CR1,
+
+    csvParserState_Field,
+    csvParserState_CR2,
+
+    csvParserState_EscapedField,
+    csvParserState_Quote,
+    csvParserState_CR3,
+
+    csvParserState_DONE,
 };
 
 struct csvParser;
@@ -189,6 +210,8 @@ struct csvParser {
     uint32_t dwFlags;                   /* Configured flags */
     unsigned long int dwFieldCount;     /* Or 0 if not determined until now ... */
     struct csvRecord* lpHeaderRecord;   /* If header reading is enabled the header record gets cached here */
+
+    char sepChar;                       /* Separator char (by default it should be ",") */
 
     struct {
         csvParser_Callback_HeadersRead  callbackHeader;     void* lpFreeParam_Header;

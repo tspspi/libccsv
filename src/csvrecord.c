@@ -134,7 +134,7 @@ enum csvError csvRecordSetField(
     struct csvRecord* lpRecord,
     unsigned long int dwFieldIndex,
 
-    char* lpDataIn,
+    const char* lpDataIn,
     unsigned long int dwDataLen
 ) {
     enum csvError e;
@@ -142,7 +142,9 @@ enum csvError csvRecordSetField(
 
     if(lpRecord == NULL) { return csvE_InvalidParam; }
 
-    if(dwFieldIndex > lpRecord->dwFieldCount) { return csvE_IndexOutOfBounds; }
+    if(dwFieldIndex >= lpRecord->dwFieldCount) {
+        return csvE_IndexOutOfBounds;
+    }
 
     if(lpRecord->fields[dwFieldIndex].lpData != NULL) {
         if(lpRecord->lpSystem == NULL) {
@@ -168,12 +170,33 @@ enum csvError csvRecordSetField(
     memcpy(lpNewBuffer, lpDataIn, dwDataLen);
     lpRecord->fields[dwFieldIndex].lpData = lpNewBuffer;
     lpRecord->fields[dwFieldIndex].dwDataLen = dwDataLen;
-    if(dwFieldIndex > lpRecord->dwUsedFieldCount) {
-        lpRecord->dwUsedFieldCount = dwFieldIndex;
+    if(dwFieldIndex >= lpRecord->dwUsedFieldCount) {
+        lpRecord->dwUsedFieldCount = dwFieldIndex+1;
     }
     return csvE_Ok;
 }
+enum csvError csvRecordAppendField(
+    struct csvRecord** lpRecord,
+    unsigned long int dwFieldIndex,
 
+    const char* lpDataIn,
+    unsigned long int dwDataLen,
+
+    struct csvSystemAPI* lpSystem
+) {
+    enum csvError e;
+
+    if(lpRecord == NULL) { return csvE_InvalidParam; }
+    if((*lpRecord) == NULL) {
+        e = csvRecordCreate(lpRecord, 1, lpSystem);
+        if(e != csvE_Ok) { return e; }
+    } else if(dwFieldIndex >= (*lpRecord)->dwFieldCount) {
+        e = csvRecordResize(lpRecord, dwFieldIndex+1);
+        if(e != csvE_Ok) { return e; }
+    }
+
+    return csvRecordSetField((*lpRecord), dwFieldIndex, lpDataIn, dwDataLen);
+}
 
 #ifdef __cplusplus
     } /* extern "C" { */
