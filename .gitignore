@@ -1,1 +1,3 @@
+bin/*.a
+bin/tests/test*
 tmp
