@@ -1,6 +1,7 @@
 #include "../include/ccsv.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef cplusplus
     extern "C" {
@@ -59,6 +60,9 @@ enum csvError csvParserCreate(
     lpNewParser->collector.lpHead                   = NULL;
     lpNewParser->collector.lpLast                   = NULL;
 
+    lpNewParser->sepChar                            = ',';
+    lpNewParser->dwCurrentFieldIndex                = 0;
+
     (*lpParserOut) = lpNewParser;
     return csvE_Ok;
 }
@@ -101,6 +105,20 @@ static inline enum csvError csvParser_AllocInternal(
         return lpP->lpSystem->alloc(lpP->lpSystem, dwSize, lpOut);
     }
 }
+static inline enum csvError csvParser_FreeInternal(
+    struct csvParser* lpP,
+    void* lpBuffer
+) {
+    if(lpP == NULL) { return csvE_InvalidParam; }
+    if(lpBuffer == NULL) { return csvE_Ok; }
+
+    if(lpP->lpSystem == NULL) {
+        free(lpBuffer);
+    } else {
+        lpP->lpSystem->free(lpP->lpSystem, lpBuffer);
+    }
+    return csvE_Ok;
+}
 
 static enum csvError csvParser_Collector_Push(
     struct csvParser* lpParser,
@@ -135,6 +153,68 @@ static enum csvError csvParser_Collector_Push(
         return csvE_Ok;
     }
 }
+static enum csvError csvParser_Collector_EventNextField(
+    struct csvParser* lpParser
+) {
+    enum csvError e;
+    unsigned long int dwSize, dwOffset;
+    struct stringCollectorElement* lpPartIterator;
+    char* lpCopyBuffer;
+
+    if(lpParser == NULL) { return csvE_InvalidParam; }
+
+    /*
+        If no record is existing, create one ...
+    */
+    if(lpParser->lpCurrentRecords == NULL) {
+        e = csvRecordCreate(&(lpParser->lpCurrentRecords), lpParser->dwFieldCount, lpParser->lpSystem);
+        if(e != csvE_Ok) { return e; }
+    }
+
+    /*
+        Count how many bytes we have to push into the
+        "record" buffer
+    */
+    dwSize = 0;
+    lpPartIterator = lpParser->collector.lpHead;
+    while(lpPartIterator != NULL) {
+        dwSize = dwSize + lpPartIterator->dwUsed;
+        lpPartIterator = lpPartIterator->lpNext;
+    }
+
+    /*
+        Allocate buffer ...
+    */
+    {
+        e = csvParser_AllocInternal(lpParser, dwSize, (void**)(&lpCopyBuffer));
+        if(e != csvE_Ok) { return e; }
+
+        /*
+            And copy data into temporary buffer
+        */
+        dwOffset = 0;
+        lpPartIterator = lpParser->collector.lpHead;
+        while(lpPartIterator != NULL) {
+            memcpy(&(lpCopyBuffer[dwOffset]), lpPartIterator->bData, lpPartIterator->dwUsed);
+            dwOffset = dwOffset + lpPartIterator->dwUsed;
+            lpPartIterator = lpPartIterator->lpNext;
+        }
+
+        /*
+            Push into record and release temporary buffer
+        */
+        e = csvRecordAppendField(&(lpParser->lpCurrentRecords), lpParser->dwCurrentFieldIndex, lpCopyBuffer, dwSize, lpParser->lpSystem);
+        if(e == csvE_Ok) { lpParser->dwCurrentFieldIndex = lpParser->dwCurrentFieldIndex + 1; }
+        csvParser_FreeInternal(lpParser, lpCopyBuffer);
+    }
+    return e;
+}
+
+static enum csvError csvParser_Event_FinishedRecord(
+    struct csvParser* lpParser
+) {
+    return csvE_Ok;
+}
 
 enum csvError csvParserProcessByte(
     struct csvParser* lpParser,
@@ -147,23 +227,107 @@ enum csvError csvParserProcessByte(
     }
 
     if(lpParser->parserState == csvParserState_IDLE) {
-        /* We are reading a new line, first element (there is no cached element) */
-        e = csvRecordCreate(&(lpParser->lpCurrentRecords), (lpParser->dwFieldCount != 0) ? lpParser->dwFieldCount : 1, lpParser->lpSystem);
-        if(e != csvE_Ok) {
-            /*
-                We failed to allocate ...
-
-                ToDo: Call error callback and either retry OR
-                release everything and abort
-            */
+        if(bByte == lpParser->sepChar) {
+            /* Separation character */
+            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_IDLE;
+            return csvE_Ok;
+        } else if(bByte == 0x0D) {
+            /* CR */
+            lpParser->parserState = csvParserState_CR1;
+            return csvE_Ok;
+        } else if(bByte == 0x22) {
+            /* DQUOTE */
+            lpParser->parserState = csvParserState_EscapedField;
+            return csvE_Ok;
+        } else if((bByte == 0x20) || (bByte == 0x21) || ((bByte >= 0x23) && (bByte <= 0x2B)) || ((bByte >= 0x2D) && (bByte <= 0x7E))) {
+            /* TEXTDATA */
+            e = csvParser_Collector_Push(lpParser, bByte);
+            if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_Field;
+            return csvE_Ok;
         }
+        return csvE_ParserError;
+    } else if(lpParser->parserState == csvParserState_CR1) {
+        if(bByte == 0x0A) {
+            /* LF */
+            lpParser->parserState = csvParserState_IDLE;
+            lpParser->dwLineNumber = lpParser->dwLineNumber + 1;
+            e = csvParser_Event_FinishedRecord(lpParser);
+            return e;
+        }
+        return csvE_ParserError;
+    } else if(lpParser->parserState == csvParserState_EscapedField) {
+        if(bByte == 0x22) {
+            /* DQUOTE */
+            lpParser->parserState = csvParserState_Quote;
+            return csvE_Ok;
+        } else if((bByte == 0x20) || (bByte == 0x21) || ((bByte >= 0x23) && (bByte <= 0x2B)) || ((bByte >= 0x2D) && (bByte <= 0x7E)) || (bByte == ',') || (bByte == 0x0A) || (bByte == 0x0D)) {
+            e = csvParser_Collector_Push(lpParser, bByte);
+            if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_EscapedField;
+            return csvE_Ok;
+        }
+        return csvE_ParserError;
+    } else if(lpParser->parserState == csvParserState_Quote) {
+        if(bByte == 0x22) {
+            e = csvParser_Collector_Push(lpParser, bByte);
+            if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_EscapedField;
+            return csvE_Ok;
+        } else if(bByte == lpParser->sepChar) {
+            /* EV: Done Record TODO */
+            /* Separation character */
+            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_IDLE;
+            return csvE_Ok;
+        } else if(bByte == 0x0D) {
+            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_CR3;
+            return csvE_Ok;
+        }
+        return csvE_ParserError;
+    } else if(lpParser->parserState == csvParserState_CR3) {
+        if(bByte == 0x0A) {
+            lpParser->parserState = csvParserState_IDLE;
+            e = csvParser_Event_FinishedRecord(lpParser);
+            return e;
+        }
+        return csvE_ParserError;
+    } else if(lpParser->parserState == csvParserState_Field) {
+        if((bByte == 0x20) || (bByte == 0x21) || ((bByte >= 0x23) && (bByte <= 0x2B)) || ((bByte >= 0x2D) && (bByte <= 0x7E))) {
+            /* TEXTDATA */
+            e = csvParser_Collector_Push(lpParser, bByte);
+            if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_Field;
+            return csvE_Ok;
+        } else if(bByte == 0x0D) {
+            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_CR2;
+            return csvE_Ok;
+        } else if(bByte == lpParser->sepChar) {
+            /* Separation character */
+            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
+            lpParser->parserState = csvParserState_IDLE;
+            return csvE_Ok;
+        }
+        return csvE_ParserError;
+    } else if(lpParser->parserState == csvParserState_CR2) {
+        if(bByte == 0x0A) {
+            lpParser->parserState = csvParserState_IDLE;
+            e = csvParser_Event_FinishedRecord(lpParser);
+            return e;
+        }
+        return csvE_ParserError;
     } else {
         return csvE_ImplementationError; /* Undefined state ... should never happen */
     }
-
+}
+enum csvError csvParserFinish(
+    struct csvParser* lpParser
+) {
     return csvE_ImplementationError;
 }
-
 
 #ifdef cplusplus
     } /* extern "C" { */

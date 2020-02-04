@@ -193,6 +193,9 @@ enum csvError csvParserCreate(
 enum csvError csvParserRelease(
     struct csvParser* lpParser
 );
+enum csvError csvParserFinish(
+    struct csvParser* lpParser
+);
 enum csvError csvParserProcessByte(
     struct csvParser* lpParser,
     char bByte
@@ -220,6 +223,8 @@ struct csvParser {
     } callbacks;
 
     struct csvRecord* lpCurrentRecords;
+    unsigned long int dwCurrentFieldIndex;
+
     struct {
         struct stringCollectorElement* lpHead;
         struct stringCollectorElement* lpLast;
