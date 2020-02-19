@@ -16,8 +16,7 @@ include ../Makefile.$(OS)
 
 
 
-all: ../bin/tests/test001_csvrecord$(EXESUFFIX) \
-	runtests
+all: ../bin/tests/test001_csvrecord$(EXESUFFIX)
 
 ../bin/tests/test001_csvrecord$(EXESUFFIX): 001_csvrecord.c ../include/ccsv.h ../src/csvrecord.c
 

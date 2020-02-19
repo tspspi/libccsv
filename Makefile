@@ -23,7 +23,11 @@ LIBHFILES=include/ccsv.h
 OBJFILES=tmp/csvrecord$(OBJSUFFIX) \
 	tmp/csvparser$(OBJSUFFIX)
 
-all: staticlib tests
+all: dirs staticlib tests
+
+dirs:
+
+	-$(MKDIR) tmp
 
 staticlib: $(OBJFILES)
 
@@ -36,8 +40,8 @@ tests:
 package: staticlib
 
 	# Create staging hierarchy
-	$(MKDIR) stage/lib
-	$(MKDIR) packages
+	-$(MKDIR) stage/lib
+	-$(MKDIR) packages
 
 	# Copy files
 	$(CP) bin/libccsv$(SLIBSUFFIX) stage/lib/libccsv$(SLIBSUFFIX)
@@ -55,7 +59,7 @@ clean:
 	- @$(RMFILE) bin/*$(SLIBSUFFIX)
 	- @$(RMFILE) bin/tests/test*
 
-.PHONY: staticlib tests clean
+.PHONY: staticlib tests clean dirs
 
 tmp/%$(OBJSUFFIX): src/%.c $(LIBHFILES)
 
