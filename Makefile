@@ -28,6 +28,7 @@ all: dirs staticlib tests
 dirs:
 
 	-$(MKDIR) tmp
+	-$(MKDIR) bin
 
 staticlib: $(OBJFILES)
 
