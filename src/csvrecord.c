@@ -99,19 +99,58 @@ enum csvError csvRecordResize(
     (*lpRecordInOut) = lpNewRecord;
     return csvE_Ok;
 }
+/*@
+    requires (\valid(lpRecordIn) && \valid_read(&lpRecordIn->dwUsedFieldCount)) || (lpRecordIn == \null);
+
+    assigns \nothing;
+    ensures \result >= 0;
+
+    behavior validPtr:
+        assumes (lpRecordIn != \null);
+
+        ensures \result == lpRecordIn->dwUsedFieldCount;
+        ensures \result >= 0;
+
+    behavior invalidPtr:
+        assumes (lpRecordIn == \null);
+
+        ensures \result == 0;
+
+    complete behaviors;
+    disjoint behaviors;
+*/
 unsigned long int csvRecordGetFieldCount(
     struct csvRecord* lpRecordIn
 ) {
     if(lpRecordIn == NULL) { return 0; }
     return lpRecordIn->dwUsedFieldCount;
 }
+/*@
+    requires (\valid(lpRecordIn) && \valid_read(&lpRecordIn->dwFieldCount)) || (lpRecordIn == \null);
+
+    assigns \nothing;
+    ensures \result >= 0;
+
+    behavior validPtr:
+        assumes (lpRecordIn != \null);
+
+        ensures \result == lpRecordIn->dwFieldCount;
+        ensures \result >= 0;
+
+    behavior invalidPtr:
+        assumes (lpRecordIn == \null);
+
+        ensures \result == 0;
+
+    complete behaviors;
+    disjoint behaviors;
+*/
 unsigned long int csvRecordGetFieldCountCapacity(
     struct csvRecord* lpRecordIn
 ) {
     if(lpRecordIn == NULL) { return 0; }
     return lpRecordIn->dwFieldCount;
 }
-
 enum csvError csvRecordGetField(
     struct csvRecord* lpRecord,
     unsigned long int dwFieldIndex,
