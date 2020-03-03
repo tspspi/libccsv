@@ -6,6 +6,117 @@
     extern "C" {
 #endif
 
+
+/*@
+    requires \valid(lpSelf) || (lpSelf == \null);
+    requires (\valid(lpDataOut) && (lpDataOut != \null)) || ((lpDataOut == \null) && (!\valid(lpDataOut)));
+    requires dwSize >= 0;
+
+    behavior invalidParamDataOut:
+        assumes lpDataOut == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+    behavior invalidParamSelf:
+        assumes lpSelf == \null;
+        assumes lpDataOut != \null;
+
+        assigns (*lpDataOut);
+
+        ensures \result == csvE_InvalidParam;
+        ensures (*lpDataOut) == \null;
+    behavior allocationZeroLength:
+        assumes lpSelf != \null;
+        assumes lpDataOut != \null;
+        assumes dwSize == 0;
+
+        ensures (\result == csvE_Ok) && ((*lpDataOut) == \null);
+    behavior allocationOrNoAllocation:
+        assumes lpSelf != \null;
+        assumes lpDataOut != \null;
+        assumes dwSize > 0;
+
+        ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
+    disjoint behaviors;
+    complete behaviors;
+*/
+/*
+    Note the following would be better but is_allocable is not supported
+    on current frama-c implementation ...
+
+    behavior allocation:
+        assumes can_allocate: is_allocable(dwSize);
+        assumes lpSelf != \null;
+        assumes lpDataOut != \null;
+
+        assigns (*lpDataOut);
+
+        ensures allocation: \fresh(*lpDataOut,dwSize);
+        ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
+    behavior no_allocation:
+        assumes cannot_allocate: !is_allocable(dwSize);
+        assumes lpSelf != \null;
+        assumes lpDataOut != \null;
+
+        assigns (*lpDataOut) \from \nothing;
+        allocates \nothing;
+
+        ensures (*lpDataOut) == \null;
+        ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
+
+*/
+static enum csvError csvRecord_csvSystemAPI_Alloc_MALLOC(
+	struct csvSystemAPI*						lpSelf,
+	unsigned long int							dwSize,
+	void**										lpDataOut
+) {
+    if(lpDataOut == NULL) { return csvE_InvalidParam; }
+    (*lpDataOut) = NULL;
+    if(lpSelf == NULL) { return csvE_InvalidParam; }
+
+    if(dwSize == 0) { return csvE_Ok; }
+
+    if(((*lpDataOut) = malloc(dwSize)) == NULL) {
+        return csvE_OutOfMemory;
+    } else {
+        return csvE_Ok;
+    }
+}
+/*@
+    requires (\valid(lpSelf) && (lpSelf != \null)) || (lpSelf == \null);
+    requires freeable: \freeable(lpObject);
+
+    behavior validParams:
+        assumes (lpSelf != \null) && (lpObject != \null);
+
+        frees lpObject;
+
+        ensures \result == csvE_Ok;
+    behavior invalidParamSelf:
+        assumes lpSelf == \null;
+
+        ensures \result == csvE_InvalidParam;
+    behavior invalidParam_Object:
+        assumes (lpSelf != \null) && (lpObject == \null);
+
+        ensures \result == csvE_Ok;
+
+    complete behaviors;
+    disjoint behaviors;
+*/
+static enum csvError csvRecord_csvSystemAPI_Free_MALLOC(
+	struct csvSystemAPI*						lpSelf,
+	void*										lpObject
+) {
+    if(lpSelf == NULL) { return csvE_InvalidParam; }
+    if(lpObject == NULL) { return csvE_Ok; }
+
+    free(lpObject);
+    return csvE_Ok;
+}
+
+
 enum csvError csvRecordCreate(
     struct csvRecord** lpOut,
     unsigned long int dwInitialFieldCount,
