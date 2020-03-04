@@ -6,117 +6,166 @@
     extern "C" {
 #endif
 
+#ifdef FRAMAC
+    /*@
+        requires \valid(lpSelf) || (lpSelf == \null);
+        requires (\valid(lpDataOut) && (lpDataOut != \null)) || ((lpDataOut == \null) && (!\valid(lpDataOut)));
+        requires dwSize >= 0;
+
+        behavior invalidParamDataOut:
+            assumes lpDataOut == \null;
+
+            assigns \nothing;
+
+            ensures \result == csvE_InvalidParam;
+        behavior invalidParamSelf:
+            assumes lpSelf == \null;
+            assumes lpDataOut != \null;
+
+            assigns (*lpDataOut);
+
+            ensures \result == csvE_InvalidParam;
+            ensures (*lpDataOut) == \null;
+        behavior allocationZeroLength:
+            assumes lpSelf != \null;
+            assumes lpDataOut != \null;
+            assumes dwSize == 0;
+
+            ensures (\result == csvE_Ok) && ((*lpDataOut) == \null);
+        behavior allocationOrNoAllocation:
+            assumes lpSelf != \null;
+            assumes lpDataOut != \null;
+            assumes dwSize > 0;
+
+            ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
+        disjoint behaviors;
+        complete behaviors;
+    */
+    /*
+        Note the following would be better but is_allocable is not supported
+        on current frama-c implementation ...
+
+        behavior allocation:
+            assumes can_allocate: is_allocable(dwSize);
+            assumes lpSelf != \null;
+            assumes lpDataOut != \null;
+
+            assigns (*lpDataOut);
+
+            ensures allocation: \fresh(*lpDataOut,dwSize);
+            ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
+        behavior no_allocation:
+            assumes cannot_allocate: !is_allocable(dwSize);
+            assumes lpSelf != \null;
+            assumes lpDataOut != \null;
+
+            assigns (*lpDataOut) \from \nothing;
+            allocates \nothing;
+
+            ensures (*lpDataOut) == \null;
+            ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
+
+    */
+    static enum csvError csvRecord_csvSystemAPI_Alloc_MALLOC(
+    	struct csvSystemAPI*						lpSelf,
+    	unsigned long int							dwSize,
+    	void**										lpDataOut
+    ) {
+        if(lpDataOut == NULL) { return csvE_InvalidParam; }
+        (*lpDataOut) = NULL;
+        if(lpSelf == NULL) { return csvE_InvalidParam; }
+
+        if(dwSize == 0) { return csvE_Ok; }
+
+        if(((*lpDataOut) = malloc(dwSize)) == NULL) {
+            return csvE_OutOfMemory;
+        } else {
+            return csvE_Ok;
+        }
+    }
+    /*@
+        requires (\valid(lpSelf) && (lpSelf != \null)) || (lpSelf == \null);
+        requires freeable: \freeable(lpObject);
+
+        behavior validParams:
+            assumes (lpSelf != \null) && (lpObject != \null);
+
+            frees lpObject;
+
+            ensures \result == csvE_Ok;
+        behavior invalidParamSelf:
+            assumes lpSelf == \null;
+
+            ensures \result == csvE_InvalidParam;
+        behavior invalidParam_Object:
+            assumes (lpSelf != \null) && (lpObject == \null);
+
+            ensures \result == csvE_Ok;
+
+        complete behaviors;
+        disjoint behaviors;
+    */
+    static enum csvError csvRecord_csvSystemAPI_Free_MALLOC(
+    	struct csvSystemAPI*						lpSelf,
+    	void*										lpObject
+    ) {
+        if(lpSelf == NULL) { return csvE_InvalidParam; }
+        if(lpObject == NULL) { return csvE_Ok; }
+
+        free(lpObject);
+        return csvE_Ok;
+    }
+#endif
 
 /*@
-    requires \valid(lpSelf) || (lpSelf == \null);
-    requires (\valid(lpDataOut) && (lpDataOut != \null)) || ((lpDataOut == \null) && (!\valid(lpDataOut)));
-    requires dwSize >= 0;
+    requires (lpOut == \null) || ((lpOut != \null) && \valid(lpOut));
+    requires (lpSystem == \null) || ((lpSystem != \null) && \valid(lpSystem));
+    requires dwInitialFieldCount >= 0;
 
-    behavior invalidParamDataOut:
-        assumes lpDataOut == \null;
+    behavior invalidOutPtr:
+        assumes lpOut == \null;
 
         assigns \nothing;
 
         ensures \result == csvE_InvalidParam;
-    behavior invalidParamSelf:
-        assumes lpSelf == \null;
-        assumes lpDataOut != \null;
+    behavior invalidSystemStructure:
+        assumes (lpOut != \null) && \valid(lpOut);
+        assumes (lpSystem != \null) && \valid(lpSystem);
+        assumes (lpSystem->alloc == \null) || (lpSystem->free == \null);
 
-        assigns (*lpDataOut);
-
+        ensures (*lpOut) == \null;
         ensures \result == csvE_InvalidParam;
-        ensures (*lpDataOut) == \null;
-    behavior allocationZeroLength:
-        assumes lpSelf != \null;
-        assumes lpDataOut != \null;
-        assumes dwSize == 0;
+    behavior validNoSystem:
+        assumes (lpOut != \null) && \valid(lpOut);
+        assumes lpSystem == \null;
 
-        ensures (\result == csvE_Ok) && ((*lpDataOut) == \null);
-    behavior allocationOrNoAllocation:
-        assumes lpSelf != \null;
-        assumes lpDataOut != \null;
-        assumes dwSize > 0;
+        ensures (*lpOut) != \null;
+        ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
+            || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
 
-        ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
-    disjoint behaviors;
-    complete behaviors;
-*/
-/*
-    Note the following would be better but is_allocable is not supported
-    on current frama-c implementation ...
+        ensures ((*lpOut)->dwUsedFieldCount == 0) || (\result != csvE_Ok);
+        ensures ((*lpOut)->dwFieldCount == dwInitialFieldCount) || (\result != csvE_Ok);
 
-    behavior allocation:
-        assumes can_allocate: is_allocable(dwSize);
-        assumes lpSelf != \null;
-        assumes lpDataOut != \null;
+        ensures \forall int n; 0 <= n < dwInitialFieldCount
+            ==> ((*lpOut)->fields[n].dwDataLen == 0) && ((*lpOut)->fields[n].lpData == \null);
 
-        assigns (*lpDataOut);
+        ensures ((*lpOut)->lpSystem == \null) || (\result != csvE_Ok);
+    behavior validWithSystem:
+        assumes (lpOut != \null) && \valid(lpOut);
+        assumes (lpSystem != \null) && \valid(lpSystem);
+        assumes (lpSystem->alloc != \null) && (lpSystem->free != \null);
 
-        ensures allocation: \fresh(*lpDataOut,dwSize);
-        ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
-    behavior no_allocation:
-        assumes cannot_allocate: !is_allocable(dwSize);
-        assumes lpSelf != \null;
-        assumes lpDataOut != \null;
+        ensures (*lpOut) != \null;
+        ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
+            || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
 
-        assigns (*lpDataOut) \from \nothing;
-        allocates \nothing;
-
-        ensures (*lpDataOut) == \null;
-        ensures ((\result == csvE_Ok) && ((*lpDataOut) != \null)) || ((\result == csvE_OutOfMemory) && ((*lpDataOut) == \null));
-
-*/
-static enum csvError csvRecord_csvSystemAPI_Alloc_MALLOC(
-	struct csvSystemAPI*						lpSelf,
-	unsigned long int							dwSize,
-	void**										lpDataOut
-) {
-    if(lpDataOut == NULL) { return csvE_InvalidParam; }
-    (*lpDataOut) = NULL;
-    if(lpSelf == NULL) { return csvE_InvalidParam; }
-
-    if(dwSize == 0) { return csvE_Ok; }
-
-    if(((*lpDataOut) = malloc(dwSize)) == NULL) {
-        return csvE_OutOfMemory;
-    } else {
-        return csvE_Ok;
-    }
-}
-/*@
-    requires (\valid(lpSelf) && (lpSelf != \null)) || (lpSelf == \null);
-    requires freeable: \freeable(lpObject);
-
-    behavior validParams:
-        assumes (lpSelf != \null) && (lpObject != \null);
-
-        frees lpObject;
-
-        ensures \result == csvE_Ok;
-    behavior invalidParamSelf:
-        assumes lpSelf == \null;
-
-        ensures \result == csvE_InvalidParam;
-    behavior invalidParam_Object:
-        assumes (lpSelf != \null) && (lpObject == \null);
-
-        ensures \result == csvE_Ok;
+        ensures ((*lpOut)->dwUsedFieldCount == 0) || (\result != csvE_Ok);
+        ensures ((*lpOut)->dwFieldCount == dwInitialFieldCount) || (\result != csvE_Ok);
+        ensures ((*lpOut)->lpSystem != \null) || (\result != csvE_Ok);
 
     complete behaviors;
     disjoint behaviors;
 */
-static enum csvError csvRecord_csvSystemAPI_Free_MALLOC(
-	struct csvSystemAPI*						lpSelf,
-	void*										lpObject
-) {
-    if(lpSelf == NULL) { return csvE_InvalidParam; }
-    if(lpObject == NULL) { return csvE_Ok; }
-
-    free(lpObject);
-    return csvE_Ok;
-}
-
-
 enum csvError csvRecordCreate(
     struct csvRecord** lpOut,
     unsigned long int dwInitialFieldCount,
@@ -128,7 +177,7 @@ enum csvError csvRecordCreate(
 
     if(lpOut == NULL) { return csvE_InvalidParam; }
     (*lpOut) = NULL;
-
+    //@ ghost lpSystem = NULL;      // ToDo: Ghost code masks of system API callbacks and is generally unacceptable
     if(lpSystem == NULL) {
         (*lpOut) = (struct csvRecord*)malloc(sizeof(struct csvRecord) + dwInitialFieldCount*sizeof(((struct csvRecord*)0)->fields[0]));
         if((*lpOut) == NULL) {
@@ -136,6 +185,7 @@ enum csvError csvRecordCreate(
         }
     } else {
         if((lpSystem->alloc == NULL) || (lpSystem->free == NULL)) { return csvE_InvalidParam; }
+        /*@ calls csvRecord_csvSystemAPI_Alloc_MALLOC; */
         e = lpSystem->alloc(lpSystem, sizeof(struct csvRecord) + dwInitialFieldCount*sizeof(((struct csvRecord*)0)->fields[0]), (void**)lpOut);
         if(e != csvE_Ok) {
             return e;
@@ -146,6 +196,13 @@ enum csvError csvRecordCreate(
     (*lpOut)->dwUsedFieldCount = 0;
     (*lpOut)->lpSystem = lpSystem;
 
+    /*@
+        loop invariant 0 <= i < dwInitialFieldCount;
+        loop assigns i;
+
+        loop assigns (*lpOut)->fields[i];
+        loop assigns (*lpOut)->fields[i].lpData;
+    */
     for(i = 0; i < dwInitialFieldCount; i=i+1) {
         (*lpOut)->fields[i].dwDataLen = 0;
         (*lpOut)->fields[i].lpData = NULL;
