@@ -177,7 +177,7 @@ enum csvError csvRecordCreate(
 
     if(lpOut == NULL) { return csvE_InvalidParam; }
     (*lpOut) = NULL;
-    //@ ghost lpSystem = NULL;      // ToDo: Ghost code masks of system API callbacks and is generally unacceptable
+    /*@ ghost lpSystem = NULL;      // ToDo: Ghost code masks of system API callbacks and is generally unacceptable */
     if(lpSystem == NULL) {
         (*lpOut) = (struct csvRecord*)malloc(sizeof(struct csvRecord) + dwInitialFieldCount*sizeof(((struct csvRecord*)0)->fields[0]));
         if((*lpOut) == NULL) {
@@ -210,32 +210,115 @@ enum csvError csvRecordCreate(
 
     return csvE_Ok;
 }
+/*@
+    requires (
+        (lpRecord != \null)
+        && \valid(lpRecord)
+        && \valid(&lpRecord->lpSystem)
+        && ((lpRecord->lpSystem == \null) || (lpRecord->lpSystem != \null))
+        && \valid(&lpRecord->dwFieldCount)
+    ) || (lpRecord == \null);
+
+    requires (
+        \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].lpData)
+        && \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].dwDataLen)
+    ) || (lpRecord == \null);
+
+    ensures \result == csvE_Ok;
+
+    behavior hasRecordAndSystem:
+        assumes (lpRecord != \null);
+        assumes (lpRecord->lpSystem != \null);
+
+        requires (lpRecord->lpSystem->alloc != \null);
+        requires (lpRecord->lpSystem->free != \null);
+
+        ensures lpRecord->dwFieldCount == 0;
+        ensures \forall int n; 0 <= n < lpRecord->dwFieldCount
+            ==> (lpRecord->fields[n].lpData == \null)
+                && (lpRecord->fields[n].dwDataLen == 0);
+
+    behavior hasRecordAndNoSystem:
+        assumes (lpRecord != \null);
+        assumes (lpRecord->lpSystem == \null);
+
+        ensures lpRecord->dwFieldCount == 0;
+        ensures \forall int n; 0 <= n < lpRecord->dwFieldCount
+            ==> (lpRecord->fields[n].lpData == \null)
+                && (lpRecord->fields[n].dwDataLen == 0);
+
+    behavior hasNoRecord:
+        assumes (lpRecord == \null);
+
+        assigns \nothing;
+
+    complete behaviors;
+    disjoint behaviors;
+*/
 enum csvError csvRecordRelease(
     struct csvRecord* lpRecord
 ) {
     unsigned long int i;
-    if(lpRecord == NULL) { return csvE_Ok; }
     struct csvSystemAPI* lpSystem;
+
+    if(lpRecord == NULL) {
+        return csvE_Ok;
+    }
+
+    /*@ assert \valid_read(&lpRecord->dwFieldCount); */
 
     lpSystem = lpRecord->lpSystem;
 
+    /*@ ghost lpSystem = NULL; // ToDo: Ghost code masks of system API callbacks and is generally unacceptable */
     if(lpSystem == NULL) {
+        /*@
+            loop invariant \valid_read(&lpRecord->dwFieldCount);
+            loop invariant lpRecord->dwFieldCount >= 0;
+            loop invariant 0 <= i <= lpRecord->dwFieldCount;
+            loop invariant \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].lpData);
+            loop invariant \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].dwDataLen);
+
+            loop assigns i,
+                lpRecord->fields[0..lpRecord->dwFieldCount-1].lpData,
+                lpRecord->fields[0..lpRecord->dwFieldCount-1].dwDataLen;
+        */
         for(i = 0; i < lpRecord->dwFieldCount; i=i+1) {
             if(lpRecord->fields[i].lpData != NULL) {
-                free((void*)(lpRecord->fields[i].lpData));
+                #ifndef FRAMAC
+                    /* ToDo: Currently there is a problem validating malloc and free */
+                    free((void*)(lpRecord->fields[i].lpData));
+                #endif
                 lpRecord->fields[i].lpData = NULL;
                 lpRecord->fields[i].dwDataLen = 0;
             }
         }
-        free((void*)lpRecord);
+        lpRecord->dwFieldCount = 0;
+        #ifndef FRAMAC
+            /* ToDo: Currently there is a problem validating malloc and free */
+            free((void*)lpRecord);
+        #endif
     } else {
+        /*@
+            loop invariant \valid_read(&lpRecord->dwFieldCount);
+            loop invariant lpRecord->dwFieldCount >= 0;
+            loop invariant 0 <= i <= lpRecord->dwFieldCount;
+            loop invariant \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].lpData);
+            loop invariant \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].dwDataLen);
+
+            loop assigns i,
+                lpRecord->fields[0..lpRecord->dwFieldCount-1].lpData,
+                lpRecord->fields[0..lpRecord->dwFieldCount-1].dwDataLen;
+        */
         for(i = 0; i < lpRecord->dwFieldCount; i=i+1) {
             if(lpRecord->fields[i].lpData != NULL) {
+                /*@calls csvRecord_csvSystemAPI_Free_MALLOC; */
                 lpSystem->free(lpSystem, (void*)(lpRecord->fields[i].lpData));
                 lpRecord->fields[i].lpData = NULL;
                 lpRecord->fields[i].dwDataLen = 0;
             }
         }
+        lpRecord->dwFieldCount = 0;
+        /*@calls csvRecord_csvSystemAPI_Free_MALLOC; */
         lpSystem->free(lpSystem, (void*)lpRecord);
     }
     return csvE_Ok;
