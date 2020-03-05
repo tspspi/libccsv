@@ -1,5 +1,8 @@
 bin/*.a
 bin/tests/test*
 tmp
+*.svg~
 *.dia~
 *.dia.autosave
+framacreport.csv
+src/.frama-c/
