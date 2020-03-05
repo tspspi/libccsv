@@ -6,6 +6,27 @@
     extern "C" {
 #endif
 
+/*@
+    predicate validCCSVCsvSystem(struct csvSystemAPI *s) =
+        \valid(s)
+        && \valid(&(s->alloc))
+        && \valid(&(s->free))
+        && (s->alloc != \null)
+        && (s->free != \null);
+*/
+/*@
+    predicate validCCSVCsvRecord(struct csvRecord *s) =
+        \valid(s)
+        && \valid(&(s->dwFieldCount))
+        && \valid(&(s->dwUsedFieldCount))
+        && \valid(&(s->lpSystem))
+        && (validCCSVCsvSystem(s->lpSystem) || (s->lpSystem == \null))
+        && (s->dwFieldCount >= 0)
+        && (s->dwUsedFieldCount >= 0)
+        && (\valid(&(s->fields[0..s->dwFieldCount].lpData)))
+        && (\valid(&(s->fields[0..s->dwFieldCount].dwDataLen)));
+*/
+
 #ifdef FRAMAC
     /*@
         requires \valid(lpSelf) || (lpSelf == \null);
@@ -119,8 +140,21 @@
 
 /*@
     requires (lpOut == \null) || ((lpOut != \null) && \valid(lpOut));
-    requires (lpSystem == \null) || ((lpSystem != \null) && \valid(lpSystem));
+    requires validCCSVCsvSystem(lpSystem) || (lpSystem == \null);
     requires dwInitialFieldCount >= 0;
+
+    ensures (\result != csvE_Ok) ||
+        (
+            validCCSVCsvRecord(*lpOut)
+            && (\result == csvE_Ok)
+            && (*lpOut)->dwUsedFieldCount == 0
+            && (*lpOut)->dwFieldCount == dwInitialFieldCount
+            && (*lpOut)->lpSystem == lpSystem
+            && (\forall int n; 0 <= n < dwInitialFieldCount
+                    ==> ((*lpOut)->fields[n].dwDataLen == 0)
+                        && ((*lpOut)->fields[n].lpData == \null)
+                )
+        );
 
     behavior invalidOutPtr:
         assumes lpOut == \null;
@@ -130,8 +164,7 @@
         ensures \result == csvE_InvalidParam;
     behavior invalidSystemStructure:
         assumes (lpOut != \null) && \valid(lpOut);
-        assumes (lpSystem != \null) && \valid(lpSystem);
-        assumes (lpSystem->alloc == \null) || (lpSystem->free == \null);
+        assumes (lpSystem != \null) && !validCCSVCsvSystem(lpSystem);
 
         ensures (*lpOut) == \null;
         ensures \result == csvE_InvalidParam;
@@ -140,6 +173,8 @@
         assumes lpSystem == \null;
 
         ensures (*lpOut) != \null;
+
+        ensures \valid((*lpOut));
         ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
             || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
 
@@ -150,18 +185,29 @@
             ==> ((*lpOut)->fields[n].dwDataLen == 0) && ((*lpOut)->fields[n].lpData == \null);
 
         ensures ((*lpOut)->lpSystem == \null) || (\result != csvE_Ok);
+        ensures \valid(&(*lpOut)) || (\result != csvE_Ok);
+        ensures \valid(&((*lpOut)->dwUsedFieldCount)) || (\result != csvE_Ok);
+        ensures \valid(&((*lpOut)->dwFieldCount)) || (\result != csvE_Ok);
     behavior validWithSystem:
         assumes (lpOut != \null) && \valid(lpOut);
         assumes (lpSystem != \null) && \valid(lpSystem);
         assumes (lpSystem->alloc != \null) && (lpSystem->free != \null);
 
         ensures (*lpOut) != \null;
+        ensures \valid((*lpOut));
         ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
             || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
 
         ensures ((*lpOut)->dwUsedFieldCount == 0) || (\result != csvE_Ok);
         ensures ((*lpOut)->dwFieldCount == dwInitialFieldCount) || (\result != csvE_Ok);
+
+        ensures \forall int n; 0 <= n < dwInitialFieldCount
+            ==> ((*lpOut)->fields[n].dwDataLen == 0) && ((*lpOut)->fields[n].lpData == \null);
+
         ensures ((*lpOut)->lpSystem != \null) || (\result != csvE_Ok);
+        ensures \valid(&(*lpOut)) || (\result != csvE_Ok);
+        ensures \valid(&((*lpOut)->dwUsedFieldCount)) || (\result != csvE_Ok);
+        ensures \valid(&((*lpOut)->dwFieldCount)) || (\result != csvE_Ok);
 
     complete behaviors;
     disjoint behaviors;
@@ -211,27 +257,13 @@ enum csvError csvRecordCreate(
     return csvE_Ok;
 }
 /*@
-    requires (
-        (lpRecord != \null)
-        && \valid(lpRecord)
-        && \valid(&lpRecord->lpSystem)
-        && ((lpRecord->lpSystem == \null) || (lpRecord->lpSystem != \null))
-        && \valid(&lpRecord->dwFieldCount)
-    ) || (lpRecord == \null);
-
-    requires (
-        \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].lpData)
-        && \valid(&lpRecord->fields[0..lpRecord->dwFieldCount-1].dwDataLen)
-    ) || (lpRecord == \null);
+    requires validCCSVCsvRecord(lpRecord) || (lpRecord == \null);
 
     ensures \result == csvE_Ok;
 
     behavior hasRecordAndSystem:
         assumes (lpRecord != \null);
         assumes (lpRecord->lpSystem != \null);
-
-        requires (lpRecord->lpSystem->alloc != \null);
-        requires (lpRecord->lpSystem->free != \null);
 
         ensures lpRecord->dwFieldCount == 0;
         ensures \forall int n; 0 <= n < lpRecord->dwFieldCount
@@ -323,6 +355,54 @@ enum csvError csvRecordRelease(
     }
     return csvE_Ok;
 }
+/*@
+    requires (lpRecordInOut == \null) ||
+        (lpRecordInOut != \null) && \valid(lpRecordInOut) && (
+            validCCSVCsvRecord(*lpRecordInOut)
+            || (*lpRecordInOut == \null)
+        );
+
+    requires dwNewFieldCount >= 0;
+
+    assigns (*lpRecordInOut);
+
+    behavior noInOutPointer:
+        assumes lpRecordInOut == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+
+    behavior noInRecord:
+        assumes lpRecordInOut != \null;
+        assumes (*lpRecordInOut) == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+
+    behavior shrinkRequest:
+        assumes lpRecordInOut != \null;
+        assumes (*lpRecordInOut) != \null;
+        assumes (*lpRecordInOut)->dwUsedFieldCount > dwNewFieldCount;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+
+    behavior correctParameters:
+        assumes lpRecordInOut != \null;
+        assumes (*lpRecordInOut) != \null;
+        assumes (*lpRecordInOut)->dwUsedFieldCount <= dwNewFieldCount;
+
+        ensures
+            \result != csvE_Ok
+            || (
+                (\result == csvE_Ok)
+                && (\forall int n; 0 <= n < (*lpRecordInOut)->dwUsedFieldCount ==> ((*lpRecordInOut))->fields[n] == \old((*lpRecordInOut))->fields[n])
+                && validCCSVCsvRecord(*lpRecordInOut)
+            );
+*/
 enum csvError csvRecordResize(
     struct csvRecord** lpRecordInOut,
     unsigned long int dwNewFieldCount
@@ -332,6 +412,7 @@ enum csvError csvRecordResize(
     unsigned long int i;
 
     if(lpRecordInOut == NULL) { return csvE_InvalidParam; }
+    if((*lpRecordInOut) == NULL) { return csvE_InvalidParam; }
     if(dwNewFieldCount < (*lpRecordInOut)->dwUsedFieldCount) { return csvE_InvalidParam; }
 
     e = csvRecordCreate(&lpNewRecord, dwNewFieldCount, (*lpRecordInOut)->lpSystem);
@@ -339,6 +420,14 @@ enum csvError csvRecordResize(
 
     lpNewRecord->dwUsedFieldCount = (*lpRecordInOut)->dwUsedFieldCount;
     lpNewRecord->dwFieldCount = dwNewFieldCount;
+    /*@
+        loop invariant 0 <= i <= lpNewRecord->dwUsedFieldCount;
+        loop invariant \valid(&lpNewRecord->dwUsedFieldCount);
+        loop assigns lpNewRecord->fields[0..i-1].lpData;
+        loop assigns lpNewRecord->fields[0..i-1].dwDataLen;
+        loop assigns (*lpRecordInOut)->fields[0..i-1].lpData;
+        loop assigns (*lpRecordInOut)->fields[0..i-1].dwDataLen;
+    */
     for(i = 0; i < lpNewRecord->dwUsedFieldCount; i=i+1) {
         lpNewRecord->fields[i].lpData = (*lpRecordInOut)->fields[i].lpData;
         lpNewRecord->fields[i].dwDataLen = (*lpRecordInOut)->fields[i].dwDataLen;
@@ -351,9 +440,10 @@ enum csvError csvRecordResize(
     return csvE_Ok;
 }
 /*@
-    requires (\valid(lpRecordIn) && \valid_read(&lpRecordIn->dwUsedFieldCount)) || (lpRecordIn == \null);
+    requires validCCSVCsvRecord(lpRecordIn) || (lpRecordIn == \null);
 
     assigns \nothing;
+
     ensures \result >= 0;
 
     behavior validPtr:
@@ -377,9 +467,10 @@ unsigned long int csvRecordGetFieldCount(
     return lpRecordIn->dwUsedFieldCount;
 }
 /*@
-    requires (\valid(lpRecordIn) && \valid_read(&lpRecordIn->dwFieldCount)) || (lpRecordIn == \null);
+    requires validCCSVCsvRecord(lpRecordIn) || (lpRecordIn == \null);
 
     assigns \nothing;
+
     ensures \result >= 0;
 
     behavior validPtr:
@@ -402,6 +493,38 @@ unsigned long int csvRecordGetFieldCountCapacity(
     if(lpRecordIn == NULL) { return 0; }
     return lpRecordIn->dwFieldCount;
 }
+/*@
+    requires validCCSVCsvRecord(lpRecord) || (lpRecord == \null);
+    requires dwFieldIndex >= 0;
+    requires (\valid(lpData_Out) && (lpData_Out != \null)) || (lpData_Out == \null);
+    requires (\valid(lpDataLen_Out) && (lpDataLen_Out != \null)) || (lpDataLen_Out == \null);
+
+    behavior invalidRecord:
+        assumes !validCCSVCsvRecord(lpRecord);
+        assigns (*lpData_Out);
+        assigns (*lpDataLen_Out);
+
+        ensures ((*lpData_Out) == \null) || (lpData_Out == \null);
+        ensures ((*lpDataLen_Out) == 0) || (lpDataLen_Out == \null);
+        ensures \result == csvE_InvalidParam;
+    behavior indexOutOfBounds:
+        assumes validCCSVCsvRecord(lpRecord);
+        assumes dwFieldIndex >= lpRecord->dwUsedFieldCount;
+
+        ensures ((*lpData_Out) == \null) || (lpData_Out == \null);
+        ensures ((*lpDataLen_Out) == 0) || (lpDataLen_Out == \null);
+        ensures \result == csvE_IndexOutOfBounds;
+    behavior allValid:
+        assumes validCCSVCsvRecord(lpRecord);
+        assumes dwFieldIndex < lpRecord->dwUsedFieldCount;
+
+        ensures ((*lpData_Out) == lpRecord->fields[dwFieldIndex].lpData) || (lpData_Out == \null);
+        ensures ((*lpDataLen_Out) == lpRecord->fields[dwFieldIndex].dwDataLen) || (lpDataLen_Out == \null);
+        ensures \result == csvE_Ok;
+
+    complete behaviors;
+    disjoint behaviors;
+*/
 enum csvError csvRecordGetField(
     struct csvRecord* lpRecord,
     unsigned long int dwFieldIndex,
@@ -410,7 +533,7 @@ enum csvError csvRecordGetField(
     unsigned long int* lpDataLen_Out
 ) {
     if(lpData_Out != NULL) { (*lpData_Out) = NULL; }
-    if(lpDataLen_Out == 0) { (*lpDataLen_Out) = 0; }
+    if(lpDataLen_Out != NULL) { (*lpDataLen_Out) = 0; }
 
     if(lpRecord == NULL) { return csvE_InvalidParam; }
 
@@ -420,6 +543,32 @@ enum csvError csvRecordGetField(
     (*lpDataLen_Out) = lpRecord->fields[dwFieldIndex].dwDataLen;
     return csvE_Ok;
 }
+
+/*@
+    requires validCCSVCsvRecord(lpRecord) || (lpRecord == \null);
+    requires dwFieldIndex >= 0;
+
+    behavior invalidRecordPtr:
+        assumes lpRecord == \null;
+        ensures \result == csvE_InvalidParam;
+    behavior outOfBOunds:
+        assumes lpRecord != \null;
+        assumes dwFieldIndex >= lpRecord->dwFieldCount;
+
+        ensures \result == csvE_IndexOutOfBounds;
+    behavior paramsOk:
+        assumes lpRecord != \null;
+        assumes dwFieldIndex < lpRecord->dwFieldCount;
+
+        assigns lpRecord->fields[dwFieldIndex].lpData;
+        assigns lpRecord->fields[dwFieldIndex].dwDataLen;
+
+        ensures (\result == csvE_Ok) || (\result == csvE_OutOfMemory);
+        ensures \valid(lpRecord->fields[dwFieldIndex].lpData) || (\result != csvE_Ok) || (lpRecord->fields[dwFieldIndex].lpData == \null);
+
+    disjoint behaviors;
+    complete behaviors;
+*/
 enum csvError csvRecordSetField(
     struct csvRecord* lpRecord,
     unsigned long int dwFieldIndex,
@@ -465,6 +614,30 @@ enum csvError csvRecordSetField(
     }
     return csvE_Ok;
 }
+
+/*@
+    requires validCCSVCsvRecord(*lpRecord) || (lpRecord == \null);
+
+    requires dwFieldIndex >= 0;
+
+    requires \valid(lpDataIn) || (lpDataIn == \null);
+    requires dwDataLen >= 0;
+
+    behavior invalidParameter:
+        assumes lpRecord == \null;
+
+        ensures \result == csvE_InvalidParam;
+    behavior correctParameter:
+        assumes lpRecord != \null;
+
+        requires validCCSVCsvRecord(*lpRecord);
+
+        ensures (validCCSVCsvRecord(*lpRecord) && \result == csvE_Ok) || (\result != csvE_Ok);
+        ensures (\result == csvE_Ok) || (\result == csvE_OutOfMemory) || (\result == csvE_InvalidParam);
+
+    complete behaviors;
+    disjoint behaviors;
+*/
 enum csvError csvRecordAppendField(
     struct csvRecord** lpRecord,
     unsigned long int dwFieldIndex,
