@@ -7,8 +7,6 @@
     extern "C" {
 #endif
 
-#define csvParserCreate__ALLOWEDFLAGS (CSVPARSER_FLAGS__QUIRKS_ALLOW_CR_LF_TERMINATION|CSVPARSER_FLAGS__QUIRKS_ALLOW_NONASCII|CSVPARSER_FLAGS__HEADERLINE_ENABLE)
-
 enum csvError csvParserCreate(
     struct csvParser** lpParserOut,
     uint32_t dwFlags,
@@ -30,6 +28,7 @@ enum csvError csvParserCreate(
 
     if((dwFlags & (~csvParserCreate__ALLOWEDFLAGS)) != 0) { return csvE_InvalidParam; }
 
+    /*@ ghost lpSystem = NULL; */
     if(lpSystem == NULL) {
         lpNewParser = (struct csvParser*)malloc(sizeof(struct csvParser));
         if(lpNewParser == NULL) {

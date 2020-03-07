@@ -554,30 +554,6 @@ typedef enum csvError (*csvParser_Callback_Error)(
     unsigned long int dwLineNumber
 );
 
-enum csvError csvParserCreate(
-    struct csvParser** lpParserOut,
-    uint32_t dwFlags,
-
-    csvParser_Callback_HeadersRead callbackHeader,
-    void* lpFreeParam_Header,
-    csvParser_Callback_RecordRead callbackRecord,
-    void* lpFreeParam_Record,
-    csvParser_Callback_Error callbackError,
-    void* lpFreeParam_Error,
-
-    struct csvSystemAPI* lpSystem
-);
-enum csvError csvParserRelease(
-    struct csvParser* lpParser
-);
-enum csvError csvParserFinish(
-    struct csvParser* lpParser
-);
-enum csvError csvParserProcessByte(
-    struct csvParser* lpParser,
-    char bByte
-);
-
 struct stringCollectorElement {
     unsigned long int dwUsed;
     struct stringCollectorElement* lpNext;
@@ -602,15 +578,137 @@ struct csvParser {
     struct csvRecord* lpCurrentRecords;
     unsigned long int dwCurrentFieldIndex;
 
+    unsigned long int dwLineNumber;     /* Line number counter (used for error messages) */
+
+    struct csvSystemAPI* lpSystem;      /* Reference to memory allocation and release */
+
     struct {
         struct stringCollectorElement* lpHead;
         struct stringCollectorElement* lpLast;
     } collector;
-
-    unsigned long int dwLineNumber;     /* Line number counter (used for error messages) */
-
-    struct csvSystemAPI* lpSystem;      /* Reference to memory allocation and release */
 };
+/*@
+    predicate ccsvParser_ValidStructure(struct csvParser* p) =
+        \valid(p)
+        && \valid(&(p->parserState))
+        && \valid(&(p->detectedLineSepChar))
+            && ((p->detectedLineSepChar == 0x0A) || (p->detectedLineSepChar == 0x0D) || (p->detectedLineSepChar == 0x00))
+        && \valid(&(p->dwFlags))
+            && ((p->dwFlags & (~(CSVPARSER_FLAGS__QUIRKS_ALLOW_CR_LF_TERMINATION|CSVPARSER_FLAGS__QUIRKS_ALLOW_NONASCII|CSVPARSER_FLAGS__HEADERLINE_ENABLE))) == 0)
+        && \valid(&(p->dwFieldCount))
+            && (p->dwFieldCount >= 0)
+        && \valid(&(p->lpHeaderRecord))
+        && \valid(&(p->sepChar))
+        && \valid(&(p->callbacks.callbackHeader)) && \valid(&(p->callbacks.lpFreeParam_Header))
+        && \valid(&(p->callbacks.callbackRecord)) && \valid(&(p->callbacks.lpFreeParam_Record))
+        && \valid(&(p->callbacks.callbackError)) && \valid(&(p->callbacks.lpFreeParam_Error))
+
+        && \valid(&(p->lpCurrentRecords))
+            && ((p->lpCurrentRecords == \null) || validCCSVCsvRecord(p->lpCurrentRecords))
+        && \valid(&(p->dwCurrentFieldIndex))
+            && (p->dwCurrentFieldIndex >= 0)
+
+        && \valid(&(p->dwLineNumber))
+            && (p->dwLineNumber >= 0)
+        && validCCSVCsvSystem(p->lpSystem);
+*/
+
+#define csvParserCreate__ALLOWEDFLAGS (CSVPARSER_FLAGS__QUIRKS_ALLOW_CR_LF_TERMINATION|CSVPARSER_FLAGS__QUIRKS_ALLOW_NONASCII|CSVPARSER_FLAGS__HEADERLINE_ENABLE)
+/*@
+    requires (lpParserOut == \null)
+            || ((lpParserOut != \null) && \valid(lpParserOut));
+    requires ((dwFlags & ~csvParserCreate__ALLOWEDFLAGS) == 0);
+
+    requires (callbackHeader == \null) || \valid_function(callbackHeader);
+    requires (callbackRecord == \null) || \valid_function(callbackRecord);
+    requires (callbackError == \null) || \valid_function(callbackError);
+
+    requires validCCSVCsvSystem(lpSystem);
+
+    behavior errNoParserOut:
+        assumes (lpParserOut == \null);
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+
+    behavior errInvalidFlags:
+        assumes (lpParserOut != \null);
+        assumes ((dwFlags & ~csvParserCreate__ALLOWEDFLAGS) != 0);
+
+        assigns (*lpParserOut);
+
+        ensures (*lpParserOut) == \null;
+        ensures \result == csvE_InvalidParam;
+
+    behavior correctParameter:
+        assumes (lpParserOut != \null);
+        assumes ((dwFlags & ~csvParserCreate__ALLOWEDFLAGS) == 0);
+
+        ensures (((*lpParserOut) == \null) && (\result == csvE_OutOfMemory))
+                || (((*lpParserOut) != \null)
+                    && (\result == csvE_Ok)
+                    && ccsvParser_ValidStructure(*lpParserOut)
+                    && ((*lpParserOut)->parserState == csvParserState_IDLE)
+                    && ((*lpParserOut)->detectedLineSepChar == 0x00)
+                    && ((*lpParserOut)->dwFlags == dwFlags)
+                    && ((*lpParserOut)->dwFieldCount == 0)
+                    && (((*lpParserOut)->lpHeaderRecord == \null) || \valid((*lpParserOut)->lpHeaderRecord))
+                    && (((*lpParserOut)->lpCurrentRecords == \null) || \valid((*lpParserOut)->lpCurrentRecords))
+                    && ((((*lpParserOut)->lpHeaderRecord == \null) && ((*lpParserOut)->lpCurrentRecords != \null)) || (((*lpParserOut)->lpHeaderRecord != \null) && ((*lpParserOut)->lpCurrentRecords == \null)))
+                    && ((*lpParserOut)->sepChar == ',')
+                    && ((*lpParserOut)->callbacks.callbackHeader == callbackHeader) && ((*lpParserOut)->callbacks.lpFreeParam_Header == lpFreeParam_Header)
+                    && ((*lpParserOut)->callbacks.callbackRecord == callbackRecord) && ((*lpParserOut)->callbacks.lpFreeParam_Record == lpFreeParam_Record)
+                    && ((*lpParserOut)->callbacks.callbackError == callbackError) && ((*lpParserOut)->callbacks.lpFreeParam_Error == lpFreeParam_Error)
+                    && ((*lpParserOut)->dwCurrentFieldIndex == 0)
+                    && ((*lpParserOut)->dwLineNumber == 0)
+                    && ((*lpParserOut)->lpSystem == lpSystem)
+                    && validCCSVCsvSystem((*lpParserOut)->lpSystem)
+                );
+
+    complete behaviors;
+    disjoint behaviors;
+*/
+enum csvError csvParserCreate(
+    struct csvParser** lpParserOut,
+    uint32_t dwFlags,
+
+    csvParser_Callback_HeadersRead callbackHeader,
+    void* lpFreeParam_Header,
+    csvParser_Callback_RecordRead callbackRecord,
+    void* lpFreeParam_Record,
+    csvParser_Callback_Error callbackError,
+    void* lpFreeParam_Error,
+
+    struct csvSystemAPI* lpSystem
+);
+/*@
+    requires (lpParser == \null) || ccsvParser_ValidStructure(lpParser);
+
+    assigns \nothing;
+
+    ensures (\result == csvE_Ok);
+*/
+enum csvError csvParserRelease(
+    struct csvParser* lpParser
+);
+/*@
+    requires (lpParser == \null) || ccsvParser_ValidStructure(lpParser);
+
+    ensures (\result == csvE_Ok) || (\result == csvE_InvalidParam);
+*/
+enum csvError csvParserFinish(
+    struct csvParser* lpParser
+);
+/*@
+    requires (lpParser == \null) || ccsvParser_ValidStructure(lpParser);
+
+    ensures (\result == csvE_Ok) || (\result == csvE_InvalidParam) || (\result == csvE_ParserError);
+*/
+enum csvError csvParserProcessByte(
+    struct csvParser* lpParser,
+    char bByte
+);
 
 /*
     Serializer API
