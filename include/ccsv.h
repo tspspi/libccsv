@@ -610,7 +610,12 @@ struct csvParser {
 
         && \valid(&(p->dwLineNumber))
             && (p->dwLineNumber >= 0)
-        && validCCSVCsvSystem(p->lpSystem);
+        && validCCSVCsvSystem(p->lpSystem)
+
+        && \valid(&(p->collector.lpHead))
+        && \valid(&(p->collector.lpLast))
+        && ((p->collector.lpHead == \null) || (\valid(p->collector.lpHead) && (p->collector.lpHead != \null)))
+        && ((p->collector.lpLast == \null) || (\valid(p->collector.lpLast) && (p->collector.lpLast != \null)));
 */
 
 #define csvParserCreate__ALLOWEDFLAGS (CSVPARSER_FLAGS__QUIRKS_ALLOW_CR_LF_TERMINATION|CSVPARSER_FLAGS__QUIRKS_ALLOW_NONASCII|CSVPARSER_FLAGS__HEADERLINE_ENABLE)
@@ -687,7 +692,7 @@ enum csvError csvParserCreate(
 
     assigns \nothing;
 
-    ensures (\result == csvE_Ok);
+    ensures (\result == csvE_Ok) || (\result == csvE_InvalidParam);
 */
 enum csvError csvParserRelease(
     struct csvParser* lpParser

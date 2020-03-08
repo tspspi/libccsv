@@ -74,26 +74,63 @@ enum csvError csvParserRelease(
         return csvE_InvalidParam;
     }
 
+    lpSystem = lpParser->lpSystem;
+    /* @ghost lpSystem = NULL; */
     if(lpParser->lpSystem == NULL) {
         free((void*)lpParser);
     } else {
-        lpSystem = lpParser->lpSystem;
         lpSystem->free(lpSystem, (void*)lpParser);
     }
 
     return csvE_Ok;
 }
 
+/*@
+    requires (lpP == \null) || (ccsvParser_ValidStructure(lpP));
+    requires dwSize >= 0;
+    requires (lpOut == \null) || ((lpOut != \null) && \valid(lpOut));
+
+    ensures (\result == csvE_InvalidParam)
+        || (\result == csvE_OutOfMemory)
+        || (\result == csvE_Ok);
+
+    behavior errInvalidOut:
+        assumes lpOut == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+
+    behavior errInvalidParser:
+        assumes lpOut != \null;
+        assumes lpP == \null;
+
+        ensures \result == csvE_InvalidParam;
+        ensures (*lpOut) == \null;
+    behavior parameterOk:
+        assumes lpOut != \null;
+        assumes lpP != \null;
+
+        ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
+                || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
+
+    complete behaviors;
+    disjoint behaviors;
+*/
 static inline enum csvError csvParser_AllocInternal(
     struct csvParser* lpP,
     unsigned long int dwSize,
     void** lpOut
 ) {
+    struct csvSystemAPI* lpSys;
+
     if(lpOut == NULL) { return csvE_InvalidParam; }
     (*lpOut) = NULL;
     if(lpP == NULL) { return csvE_InvalidParam; }
 
-    if(lpP->lpSystem == NULL) {
+    lpSys = lpP->lpSystem;
+    /*@ ghost lpSys = NULL; */
+    if(lpSys == NULL) {
         (*lpOut) = malloc(dwSize);
         if((*lpOut) == NULL) {
             return csvE_OutOfMemory;
@@ -101,24 +138,111 @@ static inline enum csvError csvParser_AllocInternal(
             return csvE_Ok;
         }
     } else {
-        return lpP->lpSystem->alloc(lpP->lpSystem, dwSize, lpOut);
+        return lpSys->alloc(lpSys, dwSize, lpOut);
     }
 }
+/*@
+    requires (lpP == \null) || (ccsvParser_ValidStructure(lpP));
+    requires (lpBuffer == \null) || (lpBuffer != \null);
+    requires freeable: \freeable(lpBuffer);
+
+    ensures (\result == csvE_Ok) || (\result == csvE_InvalidParam);
+
+    behavior errNoParser:
+        assumes lpP == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+    behavior noBuffer:
+        assumes lpP != \null;
+        assumes lpBuffer == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_Ok;
+    behavior validBuffer:
+        assumes lpP != \null;
+        assumes lpBuffer != \null;
+
+        ensures \result == csvE_Ok;
+*/
 static inline enum csvError csvParser_FreeInternal(
     struct csvParser* lpP,
     void* lpBuffer
 ) {
+    struct csvSystemAPI* lpSys;
+
     if(lpP == NULL) { return csvE_InvalidParam; }
     if(lpBuffer == NULL) { return csvE_Ok; }
 
-    if(lpP->lpSystem == NULL) {
+    lpSys = lpP->lpSystem;
+    /*@ ghost lpSys = NULL; */
+    if(lpSys == NULL) {
         free(lpBuffer);
     } else {
-        lpP->lpSystem->free(lpP->lpSystem, lpBuffer);
+        lpSys->free(lpSys, lpBuffer);
     }
     return csvE_Ok;
 }
 
+/*
+    The collector is simply an growable buffer that one can simply push
+    bytes into. The collector simply chains a list of buffers as long as
+    it's required to fit the data.
+
+    Data is added into the collector by using
+        csvParser_Collector_Push
+    This function can also be called if there is no active collector,
+    then it will just create the first buffer. If the current buffer is
+    full a new one will be appended, etc.
+
+    csvParser_Collector_EventNextField
+    finalized the current field. This means it
+    * Checks if a current record structure is present. If not it will get
+      created
+    * Allocates a buffer for the concatenated buffer content
+    * Sets the appropriate entry in the csvRecord structure and flushes the
+      collector (releases all buffers)
+*/
+/*@
+    requires ccsvParser_ValidStructure(lpParser) || (lpParser == \null);
+
+    behavior errNoParser:
+        assumes lpParser == \null;
+
+        assigns \nothing;
+
+        ensures \result == csvE_InvalidParam;
+    behavior newCollector:
+        assumes lpParser != \null;
+        assumes lpParser->collector.lpHead == \null;
+
+        ensures ((\result == csvE_OutOfMemory) && (lpParser->collector.lpHead == \null))
+            || (
+                (\result == csvE_Ok)
+                && (lpParser->collector.lpHead != \null)
+                && (lpParser->collector.lpLast == lpParser->collector.lpHead)
+                && (lpParser->collector.lpHead->lpNext == \null)
+                && (lpParser->collector.lpHead->dwUsed == 1)
+                && (lpParser->collector.lpHead->bData[0] == bByte)
+            );
+    behavior extistingCollectorAvailableSpace:
+        assumes lpParser != \null;
+        assumes lpParser->collector.lpHead != \null;
+        assumes lpParser->collector.lpLast->dwUsed < CCSV_COLLECTOR_BATCH_SIZE;
+
+        ensures lpParser->collector.lpLast->bData[\old(lpParser->collector.lpLast->dwUsed)] == bByte;
+        ensures \old(lpParser->collector.lpLast->dwUsed)+1 == lpParser->collector.lpLast->dwUsed;
+    behavior existingCollectorAppendSpace:
+        assumes lpParser != \null;
+        assumes lpParser->collector.lpHead != \null;
+        assumes lpParser->collector.lpLast->dwUsed == CCSV_COLLECTOR_BATCH_SIZE;
+
+        ensures lpParser->collector.lpLast->bData[0] == bByte;
+        ensures lpParser->collector.lpLast->dwUsed == 1;
+        ensures \old(lpParser->collector.lpLast->lpNext) == lpParser->collector.lpLast;
+*/
 static enum csvError csvParser_Collector_Push(
     struct csvParser* lpParser,
     char bByte
@@ -185,36 +309,70 @@ static enum csvError csvParser_Collector_EventNextField(
         Allocate buffer ...
     */
     {
-        e = csvParser_AllocInternal(lpParser, dwSize, (void**)(&lpCopyBuffer));
-        if(e != csvE_Ok) { return e; }
+        if(dwSize > 0) {
+            e = csvParser_AllocInternal(lpParser, dwSize, (void**)(&lpCopyBuffer));
+            if(e != csvE_Ok) { return e; }
 
-        /*
-            And copy data into temporary buffer
-        */
-        dwOffset = 0;
-        lpPartIterator = lpParser->collector.lpHead;
-        while(lpPartIterator != NULL) {
-            memcpy(&(lpCopyBuffer[dwOffset]), lpPartIterator->bData, lpPartIterator->dwUsed);
-            dwOffset = dwOffset + lpPartIterator->dwUsed;
-            lpPartIterator = lpPartIterator->lpNext;
+            /*
+                And copy data into temporary buffer
+            */
+            dwOffset = 0;
+            lpPartIterator = lpParser->collector.lpHead;
+            while(lpPartIterator != NULL) {
+                memcpy(&(lpCopyBuffer[dwOffset]), lpPartIterator->bData, lpPartIterator->dwUsed);
+                dwOffset = dwOffset + lpPartIterator->dwUsed;
+                lpPartIterator = lpPartIterator->lpNext;
+            }
+        } else {
+            dwCopyBuffer = NULL;
         }
-
         /*
             Push into record and release temporary buffer
         */
         e = csvRecordAppendField(&(lpParser->lpCurrentRecords), lpParser->dwCurrentFieldIndex, lpCopyBuffer, dwSize, lpParser->lpSystem);
-        if(e == csvE_Ok) { lpParser->dwCurrentFieldIndex = lpParser->dwCurrentFieldIndex + 1; }
-        csvParser_FreeInternal(lpParser, lpCopyBuffer);
+        if(e == csvE_Ok) {
+            lpParser->dwCurrentFieldIndex = lpParser->dwCurrentFieldIndex + 1;
+
+            /*
+                Release the whole chain ...
+            */
+            lpPartIterator = lpParser->collector.lpHead;
+            while(lpPartIterator != NULL) {
+                lpPartIteratorNext = lpPartIterator->lpNext;
+
+                if(lpPartIterator->bData != NULL) {
+                    csvParser_FreeInternal(lpParser, lpPartIterator->bData);
+                    lpPartIterator->bData = NULL;
+                    lpPartIterator->dwUsed = 0;
+                }
+                csvParser_FreeInternal(lpParser, lpPartIterator);
+                lpPartIterator = lpPartIteratorNext;
+            }
+            lpParser->collector.lpHead = NULL;
+            lpParser->collector.lpLast = NULL;
+        }
+        if(lpCopyBuffer != NULL) {
+            csvParser_FreeInternal(lpParser, lpCopyBuffer);
+        }
     }
     return e;
 }
 
+/*
+    The finish record function finalizes the current collector (if any),
+    finalizes the current csvRecord and passes that to the callback function
+    supplied by the application.
+*/
 static enum csvError csvParser_Event_FinishedRecord(
     struct csvParser* lpParser
 ) {
     return csvE_Ok;
 }
 
+/*
+    Public API
+    Main parsing state-machine
+*/
 enum csvError csvParserProcessByte(
     struct csvParser* lpParser,
     char bByte
