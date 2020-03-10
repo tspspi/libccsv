@@ -282,6 +282,7 @@ static enum csvError csvParser_Collector_EventNextField(
     enum csvError e;
     unsigned long int dwSize, dwOffset;
     struct stringCollectorElement* lpPartIterator;
+    struct stringCollectorElement* lpPartIteratorNext;
     char* lpCopyBuffer;
 
     if(lpParser == NULL) { return csvE_InvalidParam; }
@@ -324,7 +325,7 @@ static enum csvError csvParser_Collector_EventNextField(
                 lpPartIterator = lpPartIterator->lpNext;
             }
         } else {
-            dwCopyBuffer = NULL;
+            lpCopyBuffer = NULL;
         }
         /*
             Push into record and release temporary buffer
@@ -339,12 +340,6 @@ static enum csvError csvParser_Collector_EventNextField(
             lpPartIterator = lpParser->collector.lpHead;
             while(lpPartIterator != NULL) {
                 lpPartIteratorNext = lpPartIterator->lpNext;
-
-                if(lpPartIterator->bData != NULL) {
-                    csvParser_FreeInternal(lpParser, lpPartIterator->bData);
-                    lpPartIterator->bData = NULL;
-                    lpPartIterator->dwUsed = 0;
-                }
                 csvParser_FreeInternal(lpParser, lpPartIterator);
                 lpPartIterator = lpPartIteratorNext;
             }
