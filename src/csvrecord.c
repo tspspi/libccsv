@@ -17,7 +17,7 @@
 
             assigns \nothing;
 
-            ensures \result == csvE_Ok;
+            ensures \result == csvE_InvalidParam;
         behavior invalidParamSelf:
             assumes lpSelf == \null;
             assumes lpDataOut != \null;
