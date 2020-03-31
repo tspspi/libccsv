@@ -1,0 +1,6 @@
+FieldA,FieldB,Value
+1,2,3
+4,5,6
+7,"Langer Text",8
+9,"Langer mehrzeiliger
+Text der nur ein Feld ist",10

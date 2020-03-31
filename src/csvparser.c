@@ -3,9 +3,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stdio.h>
+
 #ifdef cplusplus
     extern "C" {
 #endif
+
+static inline enum csvError csvParser_AllocInternal(
+    struct csvParser* lpP,
+    unsigned long int dwSize,
+    void** lpOut
+);
+static inline enum csvError csvParser_FreeInternal(
+    struct csvParser* lpP,
+    void* lpBuffer
+);
+
 
 enum csvError csvParserCreate(
     struct csvParser** lpParserOut,
@@ -38,6 +51,7 @@ enum csvError csvParserCreate(
         if((lpSystem->alloc == NULL) | (lpSystem->free == NULL)) { return csvE_InvalidParam; }
         e = lpSystem->alloc(lpSystem, sizeof(struct csvParser), (void**)(&lpNewParser));
         if(e != csvE_Ok) {
+			/* @ghost e = csvE_OutOfMemory; */ /* ToDo: Remove this ghost code ... */
             return e;
         }
     }
@@ -68,6 +82,8 @@ enum csvError csvParserCreate(
 enum csvError csvParserRelease(
     struct csvParser* lpParser
 ) {
+	struct stringCollectorElement* lpCurElement;
+	struct stringCollectorElement* lpNextElement;
     struct csvSystemAPI* lpSystem;
 
     if(lpParser == NULL) {
@@ -75,12 +91,21 @@ enum csvError csvParserRelease(
     }
 
     lpSystem = lpParser->lpSystem;
-    /* @ghost lpSystem = NULL; */
-    if(lpParser->lpSystem == NULL) {
-        free((void*)lpParser);
-    } else {
-        lpSystem->free(lpSystem, (void*)lpParser);
-    }
+
+	if(lpParser->lpHeaderRecord != NULL) { csvRecordRelease(lpParser->lpHeaderRecord); lpParser->lpHeaderRecord = NULL; }
+	if(lpParser->lpCurrentRecords != NULL) { csvRecordRelease(lpParser->lpCurrentRecords); lpParser->lpCurrentRecords = NULL; }
+
+	/* Release chain ... */
+	lpCurElement = lpParser->collector.lpHead;
+	while(lpCurElement != NULL) {
+		lpNextElement = lpCurElement->lpNext;
+		csvParser_FreeInternal(lpParser, (void*)lpCurElement);
+		lpCurElement = lpNextElement;
+	}
+	lpParser->collector.lpHead = NULL;
+	lpParser->collector.lpLast = NULL;
+
+	csvParser_FreeInternal(lpParser, (void*)lpParser);
 
     return csvE_Ok;
 }
@@ -105,11 +130,15 @@ enum csvError csvParserRelease(
         assumes lpOut != \null;
         assumes lpP == \null;
 
+		assigns (*lpOut);
+
         ensures \result == csvE_InvalidParam;
         ensures (*lpOut) == \null;
     behavior parameterOk:
         assumes lpOut != \null;
         assumes lpP != \null;
+
+		assigns (*lpOut);
 
         ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
                 || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
@@ -253,6 +282,7 @@ static enum csvError csvParser_Collector_Push(
     if(lpParser->collector.lpHead == NULL) {
         /* We have to allocate the first element */
         e = csvParser_AllocInternal(lpParser, sizeof(struct stringCollectorElement), (void**)(&(lpParser->collector.lpHead)));
+		/*@ assert e == (csvE_Ok) || (e == csvE_OutOfMemory); */
         if(e != csvE_Ok) { return e; }
         lpParser->collector.lpLast = lpParser->collector.lpHead;
         lpParser->collector.lpHead->lpNext = NULL;
@@ -264,6 +294,7 @@ static enum csvError csvParser_Collector_Push(
         if(lpParser->collector.lpLast->dwUsed == CCSV_COLLECTOR_BATCH_SIZE) {
             /* Append a new element ... */
             e = csvParser_AllocInternal(lpParser, sizeof(struct stringCollectorElement), (void**)(&(lpParser->collector.lpLast->lpNext)));
+			/*@ assert e == (csvE_Ok) || (e == csvE_OutOfMemory); */
             if(e != csvE_Ok) { return e; }
 
             lpParser->collector.lpLast->lpNext->lpNext = NULL;
@@ -276,6 +307,21 @@ static enum csvError csvParser_Collector_Push(
         return csvE_Ok;
     }
 }
+/*@
+	requires ccsvParser_ValidStructure(lpParser) || (lpParser == \null);
+
+	behavior parserArgIsNull:
+		assumes lpParser == \null;
+
+		assigns \nothing;
+
+		ensures \result == csvE_InvalidParam;
+
+	behavior parserPresent:
+		assumes lpParser != \null;
+
+		ensures ccsvParser_ValidStructure(lpParser);
+*/
 static enum csvError csvParser_Collector_EventNextField(
     struct csvParser* lpParser
 ) {
@@ -292,6 +338,7 @@ static enum csvError csvParser_Collector_EventNextField(
     */
     if(lpParser->lpCurrentRecords == NULL) {
         e = csvRecordCreate(&(lpParser->lpCurrentRecords), lpParser->dwFieldCount, lpParser->lpSystem);
+		lpParser->dwCurrentFieldIndex = 0;
         if(e != csvE_Ok) { return e; }
     }
 
@@ -361,7 +408,72 @@ static enum csvError csvParser_Collector_EventNextField(
 static enum csvError csvParser_Event_FinishedRecord(
     struct csvParser* lpParser
 ) {
-    return csvE_Ok;
+	enum csvError e;
+	if(lpParser == NULL) { return csvE_InvalidParam; }
+
+	/*
+		First finalize the current collector and append it's field ...
+		This also clears the current collector
+	*/
+printf("%s:%u Calling next field at finishe record\n", __FILE__, __LINE__);
+	e = csvParser_Collector_EventNextField(lpParser);
+	if(e != csvE_Ok) {
+		return e;
+	}
+
+	/*
+		In case we did read the header or the *first* data line
+		we'll also determine the number of columns. In any other
+		case we will verify that the number of columns is the
+		same as in the header / first line (if this check hasn't been
+		disabled via a flag - TODO)
+	*/
+	if(((lpParser->dwFlags & CSVPARSER_FLAGS__HEADERLINE_ENABLE) != 0) && (lpParser->lpHeaderRecord == NULL)) {
+		/* Header line */
+		lpParser->lpHeaderRecord = lpParser->lpCurrentRecords;
+		lpParser->lpCurrentRecords = NULL;
+		lpParser->dwFieldCount = csvRecordGetFieldCount(lpParser->lpHeaderRecord);
+
+		if(lpParser->callbacks.callbackHeader != NULL) {
+			e = lpParser->callbacks.callbackHeader(lpParser, lpParser->callbacks.lpFreeParam_Header, lpParser->lpHeaderRecord);
+			if(e != csvE_Ok) {
+				/* We should abort processing ... signal this to our parser */
+				return e;
+			}
+		}
+		return csvE_Ok;
+	} else {
+		/*
+			Data line
+
+			If not disabled -> check the number of entries (0 -> this is an empty line
+			and might be ignored if followed by EOF; not matching the header lines -> error)
+		*/
+		if(lpParser->dwFieldCount != 0) {
+			if(lpParser->dwFieldCount != csvRecordGetFieldCount(lpParser->lpCurrentRecords)) {
+				return csvE_InvalidFieldCount;
+			}
+		} else {
+			/* This is the first line that we read so it defines the number of fields ... */
+			lpParser->dwFieldCount = csvRecordGetFieldCount(lpParser->lpCurrentRecords);
+			if(lpParser->dwFieldCount == 0) {
+				return csvE_EncodingError;
+			}
+		}
+
+		/* Count of fields looks valid, pass to callback */
+		e = lpParser->callbacks.callbackRecord(lpParser, lpParser->callbacks.lpFreeParam_Record, lpParser->lpCurrentRecords);
+		if(e != csvE_Ok) {
+			/*
+				Ok means the record has been transferred into the responsibility
+				of the application, everything else means *we* have to release it
+			*/
+			csvRecordRelease(lpParser->lpCurrentRecords);
+		}
+		lpParser->lpCurrentRecords = NULL;
+
+		return e;
+	}
 }
 
 /*
@@ -434,7 +546,6 @@ enum csvError csvParserProcessByte(
             lpParser->parserState = csvParserState_IDLE;
             return csvE_Ok;
         } else if(bByte == 0x0D) {
-            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
             lpParser->parserState = csvParserState_CR3;
             return csvE_Ok;
         }
@@ -454,7 +565,6 @@ enum csvError csvParserProcessByte(
             lpParser->parserState = csvParserState_Field;
             return csvE_Ok;
         } else if(bByte == 0x0D) {
-            e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
             lpParser->parserState = csvParserState_CR2;
             return csvE_Ok;
         } else if(bByte == lpParser->sepChar) {
@@ -478,7 +588,17 @@ enum csvError csvParserProcessByte(
 enum csvError csvParserFinish(
     struct csvParser* lpParser
 ) {
-    return csvE_ImplementationError;
+	enum csvError e;
+
+	if(lpParser == NULL) {
+		return csvE_InvalidParam;
+	}
+
+	if((lpParser->lpCurrentRecords != NULL) || (lpParser->collector.lpHead != NULL)) {
+		e = csvParser_Event_FinishedRecord(lpParser);
+		return e;
+	}
+    return csvE_Ok;
 }
 
 #ifdef cplusplus

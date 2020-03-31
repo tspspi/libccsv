@@ -20,6 +20,8 @@ enum csvError {
     csvE_IndexOutOfBounds                   = 3,
 
     csvE_ParserError                        = 4,
+	csvE_EncodingError						= 5,
+	csvE_InvalidFieldCount					= 6,
 
 
 
@@ -539,13 +541,13 @@ struct csvParser;
 
 typedef enum csvError (*csvParser_Callback_HeadersRead)(
     struct csvParser* lpParser,
-    void* lpFreeParam
-    /* Record containing header lines ... */
+    void* lpFreeParam,
+	struct csvRecord* lpHeaderLine
 );
 typedef enum csvError (*csvParser_Callback_RecordRead)(
     struct csvParser* lpParser,
-    void* lpFreeParam
-    /* Record containing data ... */
+    void* lpFreeParam,
+    struct csvRecord* lpData
 );
 typedef enum csvError (*csvParser_Callback_Error)(
     struct csvParser* lpParser,
@@ -700,7 +702,7 @@ enum csvError csvParserRelease(
 /*@
     requires (lpParser == \null) || ccsvParser_ValidStructure(lpParser);
 
-    ensures (\result == csvE_Ok) || (\result == csvE_InvalidParam);
+    ensures (\result == csvE_Ok) || (\result == csvE_InvalidParam) || (\result == csvE_ParserError);
 */
 enum csvError csvParserFinish(
     struct csvParser* lpParser

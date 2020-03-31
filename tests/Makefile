@@ -16,17 +16,31 @@ include ../Makefile.$(OS)
 
 
 
-all: ../bin/tests/test001_csvrecord$(EXESUFFIX)
+all: ../bin/tests/test001_csvrecord$(EXESUFFIX) \
+	../bin/tests/test002_csvread$(EXESUFFIX)
 
 ../bin/tests/test001_csvrecord$(EXESUFFIX): 001_csvrecord.c ../include/ccsv.h ../src/csvrecord.c
 
-	$(MKDIR) ../bin/tests
+	-$(MKDIR) ../bin/tests
 
 	$(CC) -L../bin/ -o ../bin/tests/test001_csvrecord$(EXESUFFIX) 001_csvrecord.c -lccsv
 
+../bin/tests/test002_csvread$(EXESUFFIX): 002_csvread.c ../include/ccsv.h ../src/csvrecord.c ../src/csvparser.c
+
+	-$(MKDIR) ../bin/tests
+
+	$(CC) -L../bin/ -o ../bin/tests/test002_csvread$(EXESUFFIX) 002_csvread.c -lccsv
+
 runtests:
 
+	@echo "----------------------------------------"
+	@echo "- LIBCCSV Test001: CSV record handling -"
+	@echo "----------------------------------------"
 	../bin/tests/test001_csvrecord$(EXESUFFIX)
+	@echo "---------------------------------------------------"
+	@echo "- LIBCCSV Test002: CSV reading of valid CSV files -"
+	@echo "---------------------------------------------------"
+	../bin/tests/test002_csvread$(EXESUFFIX) test01.csv
 
 clean:
 
