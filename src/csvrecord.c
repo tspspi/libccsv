@@ -151,8 +151,8 @@ enum csvError csvRecordCreate(
         loop invariant 0 <= i < dwInitialFieldCount;
         loop assigns i;
 
-        loop assigns (*lpOut)->fields[i];
-        loop assigns (*lpOut)->fields[i].lpData;
+        loop assigns (*lpOut)->fields[0..dwInitialFieldCount-1];
+        loop assigns (*lpOut)->fields[0..dwInitialFieldCount-1].lpData;
     */
     for(i = 0; i < dwInitialFieldCount; i=i+1) {
         (*lpOut)->fields[i].dwDataLen = 0;

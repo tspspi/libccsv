@@ -48,7 +48,7 @@ enum csvError csvParserCreate(
             return csvE_OutOfMemory;
         }
     } else {
-        if((lpSystem->alloc == NULL) | (lpSystem->free == NULL)) { return csvE_InvalidParam; }
+        if((lpSystem->alloc == NULL) || (lpSystem->free == NULL)) { return csvE_InvalidParam; }
         e = lpSystem->alloc(lpSystem, sizeof(struct csvParser), (void**)(&lpNewParser));
         if(e != csvE_Ok) {
 			/* @ghost e = csvE_OutOfMemory; */ /* ToDo: Remove this ghost code ... */
@@ -137,8 +137,6 @@ enum csvError csvParserRelease(
     behavior parameterOk:
         assumes lpOut != \null;
         assumes lpP != \null;
-
-		assigns (*lpOut);
 
         ensures ((\result == csvE_Ok) && ((*lpOut) != \null))
                 || ((\result == csvE_OutOfMemory) && ((*lpOut) == \null));
@@ -320,7 +318,11 @@ static enum csvError csvParser_Collector_Push(
 	behavior parserPresent:
 		assumes lpParser != \null;
 
-		ensures ccsvParser_ValidStructure(lpParser);
+		requires ccsvParser_ValidStructure(lpParser);
+
+		ensures ((\result == csvE_Ok) && ccsvParser_ValidStructure(lpParser))
+			|| (\result == csvE_InvalidParam)
+			|| (\result == csvE_OutOfMemory);
 */
 static enum csvError csvParser_Collector_EventNextField(
     struct csvParser* lpParser
@@ -336,8 +338,11 @@ static enum csvError csvParser_Collector_EventNextField(
     /*
         If no record is existing, create one ...
     */
+	/*@ assert ccsvParser_ValidStructure(lpParser); */
     if(lpParser->lpCurrentRecords == NULL) {
         e = csvRecordCreate(&(lpParser->lpCurrentRecords), lpParser->dwFieldCount, lpParser->lpSystem);
+		/*@ assert (e == csvE_Ok) || (e == csvE_InvalidParam) || (e == csvE_OutOfMemory); */
+		/*@ assert ccsvParser_ValidStructure(lpParser); */
 		lpParser->dwCurrentFieldIndex = 0;
         if(e != csvE_Ok) { return e; }
     }
@@ -405,6 +410,16 @@ static enum csvError csvParser_Collector_EventNextField(
     finalizes the current csvRecord and passes that to the callback function
     supplied by the application.
 */
+/*@
+	requires (lpParser == \null) || ccsvParser_ValidStructure(lpParser);
+
+	ensures ccsvParser_ValidStructure(lpParser);
+	ensures (\result == csvE_Ok)
+		|| (\result == csvE_EncodingError)
+		|| (\result == csvE_InvalidFieldCount)
+		|| (\result == csvE_OutOfMemory)
+		|| (\result == csvE_Abort);
+*/
 static enum csvError csvParser_Event_FinishedRecord(
     struct csvParser* lpParser
 ) {
@@ -415,7 +430,7 @@ static enum csvError csvParser_Event_FinishedRecord(
 		First finalize the current collector and append it's field ...
 		This also clears the current collector
 	*/
-printf("%s:%u Calling next field at finishe record\n", __FILE__, __LINE__);
+
 	e = csvParser_Collector_EventNextField(lpParser);
 	if(e != csvE_Ok) {
 		return e;
@@ -438,7 +453,7 @@ printf("%s:%u Calling next field at finishe record\n", __FILE__, __LINE__);
 			e = lpParser->callbacks.callbackHeader(lpParser, lpParser->callbacks.lpFreeParam_Header, lpParser->lpHeaderRecord);
 			if(e != csvE_Ok) {
 				/* We should abort processing ... signal this to our parser */
-				return e;
+				return csvE_Abort;
 			}
 		}
 		return csvE_Ok;
@@ -462,13 +477,19 @@ printf("%s:%u Calling next field at finishe record\n", __FILE__, __LINE__);
 		}
 
 		/* Count of fields looks valid, pass to callback */
-		e = lpParser->callbacks.callbackRecord(lpParser, lpParser->callbacks.lpFreeParam_Record, lpParser->lpCurrentRecords);
-		if(e != csvE_Ok) {
-			/*
-				Ok means the record has been transferred into the responsibility
-				of the application, everything else means *we* have to release it
-			*/
+		if(lpParser->callbacks.callbackRecord != NULL) {
+			e = lpParser->callbacks.callbackRecord(lpParser, lpParser->callbacks.lpFreeParam_Record, lpParser->lpCurrentRecords);
+			if(e != csvE_Ok) {
+				/*
+					Ok means the record has been transferred into the responsibility
+					of the application, everything else means *we* have to release it
+				*/
+				csvRecordRelease(lpParser->lpCurrentRecords);
+				e = csvE_Abort;
+			}
+		} else {
 			csvRecordRelease(lpParser->lpCurrentRecords);
+			e = csvE_Ok;
 		}
 		lpParser->lpCurrentRecords = NULL;
 
@@ -511,6 +532,9 @@ enum csvError csvParserProcessByte(
             lpParser->parserState = csvParserState_Field;
             return csvE_Ok;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else if(lpParser->parserState == csvParserState_CR1) {
         if(bByte == 0x0A) {
@@ -520,6 +544,9 @@ enum csvError csvParserProcessByte(
             e = csvParser_Event_FinishedRecord(lpParser);
             return e;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else if(lpParser->parserState == csvParserState_EscapedField) {
         if(bByte == 0x22) {
@@ -532,6 +559,9 @@ enum csvError csvParserProcessByte(
             lpParser->parserState = csvParserState_EscapedField;
             return csvE_Ok;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else if(lpParser->parserState == csvParserState_Quote) {
         if(bByte == 0x22) {
@@ -549,6 +579,9 @@ enum csvError csvParserProcessByte(
             lpParser->parserState = csvParserState_CR3;
             return csvE_Ok;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else if(lpParser->parserState == csvParserState_CR3) {
         if(bByte == 0x0A) {
@@ -556,6 +589,9 @@ enum csvError csvParserProcessByte(
             e = csvParser_Event_FinishedRecord(lpParser);
             return e;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else if(lpParser->parserState == csvParserState_Field) {
         if((bByte == 0x20) || (bByte == 0x21) || ((bByte >= 0x23) && (bByte <= 0x2B)) || ((bByte >= 0x2D) && (bByte <= 0x7E))) {
@@ -573,6 +609,9 @@ enum csvError csvParserProcessByte(
             lpParser->parserState = csvParserState_IDLE;
             return csvE_Ok;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else if(lpParser->parserState == csvParserState_CR2) {
         if(bByte == 0x0A) {
@@ -580,6 +619,9 @@ enum csvError csvParserProcessByte(
             e = csvParser_Event_FinishedRecord(lpParser);
             return e;
         }
+		if(lpParser->callbacks.callbackError != NULL) {
+			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
+		}
         return csvE_ParserError;
     } else {
         return csvE_ImplementationError; /* Undefined state ... should never happen */
