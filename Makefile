@@ -16,12 +16,14 @@ include Makefile.$(OS)
 
 OPTIONS=
 LIBSRCFILES=src/csvrecord.c \
-	src/csvparser.c
+	src/csvparser.c \
+	src/parserhelper.c
 
 LIBHFILES=include/ccsv.h
 
 OBJFILES=tmp/csvrecord$(OBJSUFFIX) \
-	tmp/csvparser$(OBJSUFFIX)
+	tmp/csvparser$(OBJSUFFIX) \
+	tmp/parserhelper$(OBJSUFFIX)
 
 all: dirs staticlib tests
 

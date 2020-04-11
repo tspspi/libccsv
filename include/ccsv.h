@@ -25,6 +25,8 @@ enum csvError {
 
 	csvE_Abort								= 7,
 
+	csvE_Failed								= 8,
+    csvE_PermissionDenied                   = 9,
 
     csvE_ImplementationError                = 255
 };
@@ -749,6 +751,24 @@ enum csvError csvParserFinish(
 enum csvError csvParserProcessByte(
     struct csvParser* lpParser,
     char bByte
+);
+
+/*
+	Helper API for access using libc functions
+*/
+enum csvError csvParserHelper_ProcessFile(
+	const char* lpFilename,
+
+	uint32_t dwFlags,
+
+    csvParser_Callback_HeadersRead callbackHeader,
+    void* lpFreeParam_Header,
+    csvParser_Callback_RecordRead callbackRecord,
+    void* lpFreeParam_Record,
+    csvParser_Callback_Error callbackError,
+    void* lpFreeParam_Error,
+
+    struct csvSystemAPI* lpSystem
 );
 
 /*
