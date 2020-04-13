@@ -153,16 +153,29 @@ is rather simple:
 	Declare the required callbacks
 */
 
-static enum csvError csvCallback_HeaderLine(struct csvParser* lpP, void* lpFreeParam, struct csvRecord* lpHeaderLine) {
+static enum csvError csvCallback_HeaderLine(
+	struct csvParser* lpP,
+	void* lpFreeParam,
+	struct csvRecord* lpHeaderLine
+) {
 	return csvE_Ok;
 }
 
-static enum csvError csvCallback_RecordLine(struct csvParser* lpP, void* lpFreeParam, struct csvRecord* lpRecord) {
+static enum csvError csvCallback_RecordLine(
+	struct csvParser* lpP,
+	void* lpFreeParam,
+	struct csvRecord* lpRecord
+) {
 	csvRecordRelease(lpData);
 	return csvE_Ok;
 }
 
-static enum csvError csvCallback_HeaderLine(struct csvParser* lpP, void* lpFreeParam, enum csvError eCode, unsigned long int dwLineNumber) {
+static enum csvError csvCallback_HeaderLine(
+	struct csvParser* lpP,
+	void* lpFreeParam,
+	enum csvError eCode,
+	unsigned long int dwLineNumber
+) {
 	return csvE_Ok;
 }
 
