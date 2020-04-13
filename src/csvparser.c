@@ -84,13 +84,10 @@ enum csvError csvParserRelease(
 ) {
 	struct stringCollectorElement* lpCurElement;
 	struct stringCollectorElement* lpNextElement;
-    struct csvSystemAPI* lpSystem;
 
     if(lpParser == NULL) {
         return csvE_InvalidParam;
     }
-
-    lpSystem = lpParser->lpSystem;
 
 	if(lpParser->lpHeaderRecord != NULL) { csvRecordRelease(lpParser->lpHeaderRecord); lpParser->lpHeaderRecord = NULL; }
 	if(lpParser->lpCurrentRecords != NULL) { csvRecordRelease(lpParser->lpCurrentRecords); lpParser->lpCurrentRecords = NULL; }
