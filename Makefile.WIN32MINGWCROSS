@@ -1,0 +1,16 @@
+EXESUFFIX=.exe
+OBJSUFFIX=.obj
+SLIBSUFFIX=.a
+DYNLIBSUFFIX=.dll
+
+CC=mingw32-gcc -Wall -Werror -pedantic -ansi -std=c99
+CCLIB=mingw32-gcc -Wall -Werror -pedantic -ansi -std=c99
+ARCMD=mingw32-gcc-ar rcs
+RANLIBCMD=mingw32-gcc-ranlib
+SHAREDCC=mingw32-gcc -Wall -Werror -shared
+MAKE=gmake
+CP=cp
+MKDIR=mkdir -p
+MKSTAGEARCHIVE=tar -czf packages/libccsv-x86-win32.tar.gz -C stage .
+RMDIR=rm -rf
+RMFILE=rm

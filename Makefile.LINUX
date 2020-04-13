@@ -6,6 +6,7 @@ DYNLIBSUFFIX=.so
 CC=clang -Wall -Werror -pedantic -ansi -std=c99 -lm
 CCLIB=clang -Wall -Werror -fPIC -pedantic -ansi -std=c99 -lm
 ARCMD=ar rcs
+RANLIBCMD=ranlib
 SHAREDCC=clang -Wall -Werror -shared
 MAKE=make
 CP=cp

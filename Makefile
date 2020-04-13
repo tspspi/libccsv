@@ -35,6 +35,7 @@ dirs:
 staticlib: $(OBJFILES)
 
 	$(ARCMD) bin/libccsv$(SLIBSUFFIX) $(OBJFILES)
+	$(RANLIBCMD) bin/libccsv$(SLIBSUFFIX)
 
 tests:
 
@@ -66,6 +67,7 @@ framac:
 
 	-rm framacreport.csv
 	frama-c -cpp-extra-args="-DFRAMAC" -wp -wp-verbose 1 -rte -wp-rte -wp-timeout 300 -wp-par 4 -wp-prop="-freeable,-allocation,-function_pointer" src/csvrecord.c -then -no-unicode -report -report-csv framacreport.csv > framacreport.txt
+
 
 .PHONY: staticlib tests clean dirs framac
 
