@@ -508,6 +508,12 @@ enum csvError csvParserProcessByte(
         return csvE_InvalidParam;
     }
 
+    if((lpParser->dwFlags & CSVPARSER_FLAGS__QUIRKS_ALLOW_NONASCII) == 0) {
+        if((bByte & 0x80) != 0) {
+            return csvE_EncodingError;
+        }
+    }
+
     if(lpParser->parserState == csvParserState_IDLE) {
         if(bByte == lpParser->sepChar) {
             /* Separation character */
