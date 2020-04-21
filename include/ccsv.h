@@ -26,7 +26,7 @@ enum csvError {
 	csvE_Abort								= 7,
 
 	csvE_Failed								= 8,
-    csvE_PermissionDenied                   = 9,
+	csvE_PermissionDenied					= 9,
 
     csvE_ImplementationError                = 255
 };
