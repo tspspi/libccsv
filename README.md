@@ -1,7 +1,7 @@
 # CSV parser library (libccsv)
 
 Note: _The ACSL contracts as well as the proof for the parser to be RTE-free
-is work in progress_.
+is work in progress. Consider the whole library as work in progress_.
 
 This is a small and simple ANSI C parser library for ```comma-separated values``` (CSV)
 files as specified in [RFC 4180](https://tools.ietf.org/html/rfc4180).
