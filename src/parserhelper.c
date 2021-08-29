@@ -31,7 +31,7 @@ enum csvError csvParserHelper_ProcessFile(
 	/*
 		Open file in read access mode ...
 	*/
-	fHandle = fopen(lpFilename, "reb"); /* Open file for reading, set FD_CLOEXEC and read in binary mode */
+	fHandle = fopen(lpFilename, "rb"); /* Open file for reading, set FD_CLOEXEC and read in binary mode */
 	if(fHandle == NULL) {
 		switch(errno) {
 			case EINVAL:		return csvE_ImplementationError;
