@@ -605,7 +605,13 @@ enum csvError csvParserProcessByte(
             e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
             lpParser->parserState = csvParserState_IDLE;
             return csvE_Ok;
-        }
+        } else if(bByte == 0x0a) {
+//					e = csvParser_Collector_EventNextField(lpParser); if(e != csvE_Ok) { return e; }
+          lpParser->dwLineNumber = lpParser->dwLineNumber + 1;
+          e = csvParser_Event_FinishedRecord(lpParser);
+					lpParser->parserState = csvParserState_IDLE;
+					return csvE_Ok;
+				}
 		if(lpParser->callbacks.callbackError != NULL) {
 			lpParser->callbacks.callbackError(lpParser, lpParser->callbacks.lpFreeParam_Error, csvE_ParserError, lpParser->dwLineNumber);
 		}
