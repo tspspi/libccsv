@@ -65,7 +65,7 @@ clean:
 
 framac:
 
-	-rm framacreport.csv
+	- @$(RMFILE) framacreport.csv
 	frama-c -cpp-extra-args="-DFRAMAC" -wp -wp-verbose 1 -rte -wp-rte -wp-timeout 300 -wp-par 4 -wp-prop="-freeable,-allocation,-function_pointer" src/csvrecord.c -then -no-unicode -report -report-csv framacreport.csv > framacreport.txt
 
 
