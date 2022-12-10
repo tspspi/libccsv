@@ -128,7 +128,6 @@ enum csvError csvRecordCreate(
 
     if(lpOut == NULL) { return csvE_InvalidParam; }
     (*lpOut) = NULL;
-    /*@ ghost lpSystem = NULL;      // ToDo: Ghost code masks of system API callbacks and is generally unacceptable */
     if(lpSystem == NULL) {
         (*lpOut) = (struct csvRecord*)malloc(sizeof(struct csvRecord) + dwInitialFieldCount*sizeof(((struct csvRecord*)0)->fields[0]));
         if((*lpOut) == NULL) {
@@ -175,7 +174,6 @@ enum csvError csvRecordRelease(
 
     lpSystem = lpRecord->lpSystem;
 
-    /*@ ghost lpSystem = NULL; // ToDo: Ghost code masks of system API callbacks and is generally unacceptable */
     if(lpSystem == NULL) {
         /*@
             loop invariant \valid_read(&lpRecord->dwFieldCount);
